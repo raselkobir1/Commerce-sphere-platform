@@ -1,0 +1,6 @@
+@CommerceSphere.AuthService.API_HostAddress = http://localhost:5211
+
+GET {{CommerceSphere.AuthService.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

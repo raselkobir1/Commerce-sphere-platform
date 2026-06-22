@@ -1,0 +1,298 @@
+version: "3.9"
+
+networks:
+  commerce-net:
+    driver: bridge
+
+volumes:
+  pgdata-auth:
+  pgdata-product:
+  pgdata-inventory:
+  pgdata-cart:
+  redis-data:
+  kafka-data:
+
+services:
+
+  # ─── Infrastructure ───────────────────────────────────────────
+
+  postgres-auth:
+    image: postgres:16-alpine
+    container_name: postgres-auth
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: commerce
+      POSTGRES_PASSWORD: commerce_pass
+    volumes:
+      - pgdata-auth:/var/lib/postgresql/data
+    networks:
+      - commerce-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U commerce -d auth_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-product:
+    image: postgres:16-alpine
+    container_name: postgres-product
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: product_db
+      POSTGRES_USER: commerce
+      POSTGRES_PASSWORD: commerce_pass
+    volumes:
+      - pgdata-product:/var/lib/postgresql/data
+    networks:
+      - commerce-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U commerce -d product_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-inventory:
+    image: postgres:16-alpine
+    container_name: postgres-inventory
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: inventory_db
+      POSTGRES_USER: commerce
+      POSTGRES_PASSWORD: commerce_pass
+    volumes:
+      - pgdata-inventory:/var/lib/postgresql/data
+    networks:
+      - commerce-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U commerce -d inventory_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-cart:
+    image: postgres:16-alpine
+    container_name: postgres-cart
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cart_db
+      POSTGRES_USER: commerce
+      POSTGRES_PASSWORD: commerce_pass
+    volumes:
+      - pgdata-cart:/var/lib/postgresql/data
+    networks:
+      - commerce-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U commerce -d cart_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis-data:/data
+    networks:
+      - commerce-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Kafka with KRaft mode (no ZooKeeper required — Kafka 3.7+)
+  kafka:
+    image: bitnami/kafka:3.7
+    container_name: kafka
+    restart: unless-stopped
+    environment:
+      # KRaft settings
+      KAFKA_CFG_NODE_ID: 1
+      KAFKA_CFG_PROCESS_ROLES: broker,controller
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      # Listeners
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      # Topic defaults
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_CFG_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_CFG_NUM_PARTITIONS: 3
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    volumes:
+      - kafka-data:/bitnami/kafka
+    ports:
+      - "9094:9094"
+    networks:
+      - commerce-net
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ─── Microservices ────────────────────────────────────────────
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: src/Services/Auth/CommerceSphere.AuthService.API/Dockerfile
+    container_name: auth-service
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:80
+      ConnectionStrings__AuthDb: "Host=postgres-auth;Port=5432;Database=auth_db;Username=commerce;Password=commerce_pass;"
+      ConnectionStrings__Redis: "redis:6379"
+      Jwt__Secret: "CommerceSphere_SuperSecret_JWT_Key_2024_Min32Chars!!"
+      Jwt__Issuer: "CommerceSphere"
+      Jwt__Audience: "CommerceSphereClients"
+      Jwt__ExpiryMinutes: "60"
+      Kafka__BootstrapServers: "kafka:9092"
+    depends_on:
+      postgres-auth:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - commerce-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  product-service:
+    build:
+      context: .
+      dockerfile: src/Services/Product/CommerceSphere.ProductService.API/Dockerfile
+    container_name: product-service
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:80
+      ConnectionStrings__ProductDb: "Host=postgres-product;Port=5432;Database=product_db;Username=commerce;Password=commerce_pass;"
+      ConnectionStrings__Redis: "redis:6379"
+      Jwt__Secret: "CommerceSphere_SuperSecret_JWT_Key_2024_Min32Chars!!"
+      Jwt__Issuer: "CommerceSphere"
+      Jwt__Audience: "CommerceSphereClients"
+      Kafka__BootstrapServers: "kafka:9092"
+    depends_on:
+      postgres-product:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - commerce-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  inventory-service:
+    build:
+      context: .
+      dockerfile: src/Services/Inventory/CommerceSphere.InventoryService.API/Dockerfile
+    container_name: inventory-service
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:80
+      ConnectionStrings__InventoryDb: "Host=postgres-inventory;Port=5432;Database=inventory_db;Username=commerce;Password=commerce_pass;"
+      ConnectionStrings__Redis: "redis:6379"
+      Jwt__Secret: "CommerceSphere_SuperSecret_JWT_Key_2024_Min32Chars!!"
+      Jwt__Issuer: "CommerceSphere"
+      Jwt__Audience: "CommerceSphereClients"
+      Kafka__BootstrapServers: "kafka:9092"
+    depends_on:
+      postgres-inventory:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - commerce-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  cart-service:
+    build:
+      context: .
+      dockerfile: src/Services/Cart/CommerceSphere.CartService.API/Dockerfile
+    container_name: cart-service
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:80
+      ConnectionStrings__CartDb: "Host=postgres-cart;Port=5432;Database=cart_db;Username=commerce;Password=commerce_pass;"
+      ConnectionStrings__Redis: "redis:6379"
+      Jwt__Secret: "CommerceSphere_SuperSecret_JWT_Key_2024_Min32Chars!!"
+      Jwt__Issuer: "CommerceSphere"
+      Jwt__Audience: "CommerceSphereClients"
+      Kafka__BootstrapServers: "kafka:9092"
+    depends_on:
+      postgres-cart:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      inventory-service:
+        condition: service_healthy
+    networks:
+      - commerce-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # ─── API Gateway ─────────────────────────────────────────────
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: src/ApiGateway/CommerceSphere.ApiGateway/Dockerfile
+    container_name: api-gateway
+    restart: unless-stopped
+    ports:
+      - "5000:80"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:80
+      Jwt__Secret: "CommerceSphere_SuperSecret_JWT_Key_2024_Min32Chars!!"
+      Jwt__Issuer: "CommerceSphere"
+      Jwt__Audience: "CommerceSphereClients"
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+      inventory-service:
+        condition: service_healthy
+      cart-service:
+        condition: service_healthy
+    networks:
+      - commerce-net

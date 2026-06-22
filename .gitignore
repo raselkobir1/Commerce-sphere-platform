@@ -1,0 +1,128 @@
+# ── Build output ─────────────────────────────────────────────────────────────
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+[Ll]og/
+logs/
+*.log
+
+# ── NuGet ─────────────────────────────────────────────────────────────────────
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+nuget.config.local
+project.lock.json
+project.fragment.lock.json
+
+# ── .NET runtime ──────────────────────────────────────────────────────────────
+*.user
+*.suo
+*.userosscache
+*.userprefs
+.vs/
+*.vshost.exe
+*.vshost.exe.manifest
+
+# ── Publish output ────────────────────────────────────────────────────────────
+publish/
+[Pp]ublish/
+**/Properties/PublishProfiles/
+
+# ── Test results ──────────────────────────────────────────────────────────────
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+TestResult.xml
+coverage/
+*.coverage
+*.coveragexml
+*.runsettings
+
+# ── Rider ─────────────────────────────────────────────────────────────────────
+.idea/
+*.sln.iml
+
+# ── VS Code ───────────────────────────────────────────────────────────────────
+.vscode/
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+
+# ── Visual Studio ─────────────────────────────────────────────────────────────
+.vs/
+*.aps
+*.ncb
+*.opensdf
+*.sdf
+*.cachefile
+*.VC.db
+*.VC.opendb
+ipch/
+*.psess
+*.vsp
+*.vspx
+*.sap
+*.e2e
+BenchmarkDotNet.Artifacts/
+
+# ── Secrets and environment ───────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+appsettings.Local.json
+appsettings.local.json
+appsettings.*.local.json
+secrets.json
+**/secrets/
+
+# ── Docker volumes and override secrets ──────────────────────────────────────
+# Keep: docker-compose.yml, docker-compose.dev.yml
+# Ignore: any local credential overrides
+docker-compose.override.yml
+docker-compose.local.yml
+
+# ── HTTPS dev certificates ────────────────────────────────────────────────────
+*.pfx
+*.pem
+*.cer
+*.p12
+!**/test-assets/*.pfx
+
+# ── Database ──────────────────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+*.mdf
+*.ldf
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Linux
+*~
+
+# ── Scratchpad and tooling ────────────────────────────────────────────────────
+.claude/
+*.tmp
+*.temp
+nbproject/
+
+# ── Rider and Resharper ───────────────────────────────────────────────────────
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+.ExternalHelpers/

@@ -1,0 +1,35 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/ApiGateway/">
+    <Project Path="src/ApiGateway/CommerceSphere.ApiGateway/CommerceSphere.ApiGateway.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/" />
+  <Folder Name="/src/Services/Auth/">
+    <Project Path="src/Services/Auth/CommerceSphere.AuthService.API/CommerceSphere.AuthService.API.csproj" />
+    <Project Path="src/Services/Auth/CommerceSphere.AuthService.Application/CommerceSphere.AuthService.Application.csproj" />
+    <Project Path="src/Services/Auth/CommerceSphere.AuthService.Domain/CommerceSphere.AuthService.Domain.csproj" />
+    <Project Path="src/Services/Auth/CommerceSphere.AuthService.Infrastructure/CommerceSphere.AuthService.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/Cart/">
+    <Project Path="src/Services/Cart/CommerceSphere.CartService.API/CommerceSphere.CartService.API.csproj" />
+    <Project Path="src/Services/Cart/CommerceSphere.CartService.Application/CommerceSphere.CartService.Application.csproj" />
+    <Project Path="src/Services/Cart/CommerceSphere.CartService.Domain/CommerceSphere.CartService.Domain.csproj" />
+    <Project Path="src/Services/Cart/CommerceSphere.CartService.Infrastructure/CommerceSphere.CartService.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/Inventory/">
+    <Project Path="src/Services/Inventory/CommerceSphere.InventoryService.API/CommerceSphere.InventoryService.API.csproj" />
+    <Project Path="src/Services/Inventory/CommerceSphere.InventoryService.Application/CommerceSphere.InventoryService.Application.csproj" />
+    <Project Path="src/Services/Inventory/CommerceSphere.InventoryService.Domain/CommerceSphere.InventoryService.Domain.csproj" />
+    <Project Path="src/Services/Inventory/CommerceSphere.InventoryService.Infrastructure/CommerceSphere.InventoryService.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/Product/">
+    <Project Path="src/Services/Product/CommerceSphere.ProductService.API/CommerceSphere.ProductService.API.csproj" />
+    <Project Path="src/Services/Product/CommerceSphere.ProductService.Application/CommerceSphere.ProductService.Application.csproj" />
+    <Project Path="src/Services/Product/CommerceSphere.ProductService.Domain/CommerceSphere.ProductService.Domain.csproj" />
+    <Project Path="src/Services/Product/CommerceSphere.ProductService.Infrastructure/CommerceSphere.ProductService.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/Shared/">
+    <Project Path="src/Shared/CommerceSphere.Shared.Common/CommerceSphere.Shared.Common.csproj" />
+    <Project Path="src/Shared/CommerceSphere.Shared.Contracts/CommerceSphere.Shared.Contracts.csproj" />
+  </Folder>
+</Solution>

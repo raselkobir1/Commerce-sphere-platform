@@ -1,0 +1,30 @@
+version: "3.9"
+
+# Overlay for hybrid development: infra in Docker, services run locally.
+# Usage:
+#   docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d \
+#     postgres-auth postgres-product postgres-inventory postgres-cart redis kafka
+#
+# This exposes each database on a unique local port so your locally-running
+# services can reach them. Kafka is already on :9094 in the base file.
+
+services:
+  postgres-auth:
+    ports:
+      - "5433:5432"
+
+  postgres-product:
+    ports:
+      - "5434:5432"
+
+  postgres-inventory:
+    ports:
+      - "5435:5432"
+
+  postgres-cart:
+    ports:
+      - "5436:5432"
+
+  redis:
+    ports:
+      - "6379:6379"

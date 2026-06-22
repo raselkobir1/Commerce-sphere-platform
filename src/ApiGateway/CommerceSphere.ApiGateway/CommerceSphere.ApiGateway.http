@@ -1,0 +1,6 @@
+@CommerceSphere.ApiGateway_HostAddress = http://localhost:5188
+
+GET {{CommerceSphere.ApiGateway_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
