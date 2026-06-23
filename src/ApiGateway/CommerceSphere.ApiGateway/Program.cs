@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text;
 using System.Threading.RateLimiting;
 using CommerceSphere.Shared.Common.Extensions;
@@ -95,6 +96,24 @@ app.MapReverseProxy(pipeline =>
         if (!string.IsNullOrWhiteSpace(correlationId))
             context.Response.Headers["X-Correlation-Id"] = correlationId;
 
+        // Authenticated user-এর claims downstream-এ পাঠানো
+        if (context.User.Identity?.IsAuthenticated == true)
+        {
+            var userId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                      ?? context.User.FindFirst("sub")?.Value;
+
+            var userRole = context.User.FindFirst(ClaimTypes.Role)?.Value;
+            var userName = context.User.FindFirst(ClaimTypes.Name)?.Value;
+
+            if (userId != null)
+                context.Request.Headers["X-User-Id"] = userId;
+
+            if (userRole != null)
+                context.Request.Headers["X-User-Role"] = userRole;
+
+            if (userName != null)
+                context.Request.Headers["X-User-Name"] = userName;    
+        }
         await next();
     });
 });
