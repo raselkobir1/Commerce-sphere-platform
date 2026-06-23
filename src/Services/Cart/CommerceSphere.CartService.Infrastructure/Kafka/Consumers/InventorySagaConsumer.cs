@@ -22,6 +22,9 @@ public class InventorySagaConsumer(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Yield immediately so BackgroundService.StartAsync returns before consumer.Consume() blocks
+        await Task.Yield();
+
         var config = new ConsumerConfig
         {
             BootstrapServers = configuration["Kafka:BootstrapServers"] ?? "kafka:9092",
@@ -54,10 +57,12 @@ public class InventorySagaConsumer(
             catch (ConsumeException ex)
             {
                 logger.LogError(ex, "Consume error: {Reason}", ex.Error.Reason);
+                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Unexpected error in InventorySagaConsumer loop.");
+                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
             }
         }
 

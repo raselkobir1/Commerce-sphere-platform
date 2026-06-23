@@ -23,6 +23,9 @@ public class ProductCreatedConsumer(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Yield immediately so BackgroundService.StartAsync returns before consumer.Consume() blocks
+        await Task.Yield();
+
         var consumerConfig = new ConsumerConfig
         {
             BootstrapServers = config["Kafka:BootstrapServers"] ?? "localhost:9092",
@@ -62,6 +65,7 @@ public class ProductCreatedConsumer(
             catch (Exception ex)
             {
                 logger.LogError(ex, "Unexpected error in ProductCreatedConsumer loop.");
+                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
             }
         }
 
