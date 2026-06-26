@@ -199,7 +199,9 @@ services:
     networks:
       - commerce-net
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/health/ready || exit 1"]
+      # Keycloak's ubi9-minimal image has no curl/wget — use bash /dev/tcp to HTTP-check
+      # the /realms/master endpoint, which returns 200 only once Keycloak is fully started.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /realms/master HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3"]
       interval: 20s
       timeout: 10s
       retries: 10
