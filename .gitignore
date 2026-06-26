@@ -66,19 +66,19 @@ ipch/
 BenchmarkDotNet.Artifacts/
 
 # ── Secrets and environment ───────────────────────────────────────────────────
-.env
-.env.*
-!.env.example
+.env                         # generic local env (not used by this project)
+.env.production              # real prod secrets — never commit this
+.env.local
 appsettings.Local.json
 appsettings.local.json
 appsettings.*.local.json
 secrets.json
 **/secrets/
 
-# ── Docker volumes and override secrets ──────────────────────────────────────
-# Keep: docker-compose.yml, docker-compose.dev.yml
-# Ignore: any local credential overrides
-docker-compose.override.yml
+# ── Docker compose ────────────────────────────────────────────────────────────
+# docker-compose.override.yml  ← committed (team-wide dev settings, auto-loaded)
+# docker-compose.prod.yml      ← committed (production deployment config)
+# docker-compose.local.yml     ← NOT committed (per-machine personal overrides)
 docker-compose.local.yml
 
 # ── HTTPS dev certificates ────────────────────────────────────────────────────

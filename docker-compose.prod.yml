@@ -1,0 +1,119 @@
+# docker-compose.prod.yml — production deployment overlay.
+# Must be combined explicitly with the base file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Secrets: copy .env.production.example → .env.production and fill in real values.
+# In CI/CD pipelines (GitHub Actions, GitLab CI): inject as environment variables
+# instead of writing .env.production to disk.
+
+services:
+
+  # ─── Services: production mode ─────────────────────────────────────────────
+  # • ASPNETCORE_ENVIRONMENT=Production  → Swagger off, minimal error detail
+  # • No ports exposed except the API Gateway on :5000
+  # • Secrets come from .env.production (gitignored)
+
+  auth-service:
+    env_file: .env.production
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__AuthDb: "Host=postgres-auth;Port=5432;Database=auth_db;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};"
+      ConnectionStrings__Redis: "redis:6379,abortConnect=false,connectRetry=3"
+      Jwt__Secret: "${JWT_SECRET}"
+      Jwt__Issuer: "${JWT_ISSUER}"
+      Jwt__Audience: "${JWT_AUDIENCE}"
+      Jwt__ExpiryMinutes: "${JWT_EXPIRY_MINUTES:-60}"
+      Kafka__BootstrapServers: "kafka:9092"
+      Keycloak__Authority: "http://keycloak:8080/realms/commerce-sphere"
+      Keycloak__ClientId: "commerce-sphere-client"
+      Keycloak__ClientSecret: "${KEYCLOAK_CLIENT_SECRET}"
+      Keycloak__CallbackBaseUrl: "https://your-domain.com"  # ← change to real domain
+      Keycloak__CallbackPath: "/api/auth/sso/callback"
+      Keycloak__Providers__0: "google"
+      Keycloak__Providers__1: "github"
+      Keycloak__Providers__2: "facebook"
+
+  product-service:
+    env_file: .env.production
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__ProductDb: "Host=postgres-product;Port=5432;Database=product_db;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};"
+      ConnectionStrings__Redis: "redis:6379,abortConnect=false,connectRetry=3"
+      Jwt__Secret: "${JWT_SECRET}"
+      Jwt__Issuer: "${JWT_ISSUER}"
+      Jwt__Audience: "${JWT_AUDIENCE}"
+      Kafka__BootstrapServers: "kafka:9092"
+
+  inventory-service:
+    env_file: .env.production
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__InventoryDb: "Host=postgres-inventory;Port=5432;Database=inventory_db;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};"
+      ConnectionStrings__Redis: "redis:6379,abortConnect=false,connectRetry=3"
+      Jwt__Secret: "${JWT_SECRET}"
+      Jwt__Issuer: "${JWT_ISSUER}"
+      Jwt__Audience: "${JWT_AUDIENCE}"
+      Kafka__BootstrapServers: "kafka:9092"
+
+  cart-service:
+    env_file: .env.production
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__CartDb: "Host=postgres-cart;Port=5432;Database=cart_db;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};"
+      ConnectionStrings__Redis: "redis:6379,abortConnect=false,connectRetry=3"
+      Jwt__Secret: "${JWT_SECRET}"
+      Jwt__Issuer: "${JWT_ISSUER}"
+      Jwt__Audience: "${JWT_AUDIENCE}"
+      Kafka__BootstrapServers: "kafka:9092"
+
+  api-gateway:
+    env_file: .env.production
+    ports:
+      - "5000:80"   # only port exposed to the internet
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Jwt__Secret: "${JWT_SECRET}"
+      Jwt__Issuer: "${JWT_ISSUER}"
+      Jwt__Audience: "${JWT_AUDIENCE}"
+
+  keycloak:
+    env_file: .env.production
+    # In production: use `start` (not `start-dev`) with TLS termination at the reverse proxy.
+    # KC_HOSTNAME must match your public domain; KC_PROXY=edge tells Keycloak it's behind a proxy.
+    command: start --import-realm
+    environment:
+      KEYCLOAK_ADMIN: "${KEYCLOAK_ADMIN}"
+      KEYCLOAK_ADMIN_PASSWORD: "${KEYCLOAK_ADMIN_PASSWORD}"
+      KC_HOSTNAME_STRICT: "true"
+      KC_HTTP_ENABLED: "false"        # disable plain HTTP; TLS handled by reverse proxy
+      KC_PROXY: "edge"                # trust X-Forwarded-* from the reverse proxy
+      KC_HOSTNAME: "auth.your-domain.com"  # ← change to real hostname
+
+  # ─── PostgreSQL: production hardening ──────────────────────────────────────
+  # No ports exposed — only reachable within the Docker network.
+
+  postgres-auth:
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+
+  postgres-product:
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+
+  postgres-inventory:
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+
+  postgres-cart:
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+
+  postgres-keycloak:
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"

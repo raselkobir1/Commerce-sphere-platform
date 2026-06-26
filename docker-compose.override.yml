@@ -1,0 +1,156 @@
+# docker-compose.override.yml — auto-loaded by `docker compose up`.
+# Sets ASPNETCORE_ENVIRONMENT=Development for all services (enables Swagger, detailed errors).
+# Exposes every port to the host for direct access with TablePlus, Postman, Kafka UI, etc.
+# Adds dev-only tools: Kafka UI, pgAdmin.
+#
+# To run ONLY infrastructure (services run locally with dotnet run):
+#   docker compose up -d postgres-auth postgres-product postgres-inventory postgres-cart redis kafka keycloak
+#
+# To override a single value locally without touching this file:
+#   create docker-compose.local.yml (gitignored) and use -f docker-compose.local.yml
+
+services:
+
+  # ─── Services: switch to Development mode ──────────────────────────────────
+  # ASPNETCORE_ENVIRONMENT=Development activates:
+  #   • appsettings.Development.json
+  #   • Swagger UI at /swagger
+  #   • Detailed exception pages
+
+  auth-service:
+    env_file: .env.development
+    ports:
+      - "5211:80"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__AuthDb: "Host=postgres-auth;Port=5432;Database=auth_db;Username=${POSTGRES_USER:-commerce};Password=${POSTGRES_PASSWORD:-commerce_pass};"
+      ConnectionStrings__Redis: "redis:6379,abortConnect=false,connectRetry=3"
+      Jwt__Secret: "${JWT_SECRET}"
+      Jwt__Issuer: "${JWT_ISSUER:-CommerceSphere}"
+      Jwt__Audience: "${JWT_AUDIENCE:-CommerceSphereClients}"
+      Jwt__ExpiryMinutes: "${JWT_EXPIRY_MINUTES:-60}"
+      Kafka__BootstrapServers: "kafka:9092"
+      Keycloak__Authority: "http://keycloak:8080/realms/commerce-sphere"
+      Keycloak__ClientId: "commerce-sphere-client"
+      Keycloak__ClientSecret: "${KEYCLOAK_CLIENT_SECRET}"
+      Keycloak__CallbackBaseUrl: "http://localhost:5000"
+      Keycloak__CallbackPath: "/api/auth/sso/callback"
+      Keycloak__Providers__0: "google"
+      Keycloak__Providers__1: "github"
+      Keycloak__Providers__2: "facebook"
+
+  product-service:
+    env_file: .env.development
+    ports:
+      - "5095:80"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__ProductDb: "Host=postgres-product;Port=5432;Database=product_db;Username=${POSTGRES_USER:-commerce};Password=${POSTGRES_PASSWORD:-commerce_pass};"
+      ConnectionStrings__Redis: "redis:6379,abortConnect=false,connectRetry=3"
+      Jwt__Secret: "${JWT_SECRET}"
+      Jwt__Issuer: "${JWT_ISSUER:-CommerceSphere}"
+      Jwt__Audience: "${JWT_AUDIENCE:-CommerceSphereClients}"
+      Kafka__BootstrapServers: "kafka:9092"
+
+  inventory-service:
+    env_file: .env.development
+    ports:
+      - "5035:80"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__InventoryDb: "Host=postgres-inventory;Port=5432;Database=inventory_db;Username=${POSTGRES_USER:-commerce};Password=${POSTGRES_PASSWORD:-commerce_pass};"
+      ConnectionStrings__Redis: "redis:6379,abortConnect=false,connectRetry=3"
+      Jwt__Secret: "${JWT_SECRET}"
+      Jwt__Issuer: "${JWT_ISSUER:-CommerceSphere}"
+      Jwt__Audience: "${JWT_AUDIENCE:-CommerceSphereClients}"
+      Kafka__BootstrapServers: "kafka:9092"
+
+  cart-service:
+    env_file: .env.development
+    ports:
+      - "5236:80"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__CartDb: "Host=postgres-cart;Port=5432;Database=cart_db;Username=${POSTGRES_USER:-commerce};Password=${POSTGRES_PASSWORD:-commerce_pass};"
+      ConnectionStrings__Redis: "redis:6379,abortConnect=false,connectRetry=3"
+      Jwt__Secret: "${JWT_SECRET}"
+      Jwt__Issuer: "${JWT_ISSUER:-CommerceSphere}"
+      Jwt__Audience: "${JWT_AUDIENCE:-CommerceSphereClients}"
+      Kafka__BootstrapServers: "kafka:9092"
+
+  api-gateway:
+    env_file: .env.development
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Jwt__Secret: "${JWT_SECRET}"
+      Jwt__Issuer: "${JWT_ISSUER:-CommerceSphere}"
+      Jwt__Audience: "${JWT_AUDIENCE:-CommerceSphereClients}"
+
+  # ─── Infrastructure: expose ports to host ──────────────────────────────────
+
+  postgres-auth:
+    ports:
+      - "5433:5432"
+
+  postgres-product:
+    ports:
+      - "5434:5432"
+
+  postgres-inventory:
+    ports:
+      - "5435:5432"
+
+  postgres-cart:
+    ports:
+      - "5436:5432"
+
+  postgres-keycloak:
+    ports:
+      - "5437:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  keycloak:
+    env_file: .env.development
+    environment:
+      KEYCLOAK_ADMIN: "${KEYCLOAK_ADMIN:-admin}"
+      KEYCLOAK_ADMIN_PASSWORD: "${KEYCLOAK_ADMIN_PASSWORD}"
+
+  # ─── Dev tools ─────────────────────────────────────────────────────────────
+
+  # Kafka UI — browse topics, consumer groups, messages at http://localhost:8090
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    restart: unless-stopped
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: commerce-sphere
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - commerce-net
+
+  # pgAdmin — manage all PostgreSQL databases at http://localhost:5050
+  # Login: admin@commercesphere.dev / admin
+  pgadmin:
+    image: dpage/pgadmin4:8
+    container_name: pgadmin
+    restart: unless-stopped
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@commercesphere.dev
+      PGADMIN_DEFAULT_PASSWORD: admin
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    networks:
+      - commerce-net
+
+volumes:
+  pgadmin-data:

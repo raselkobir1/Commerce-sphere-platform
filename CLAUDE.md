@@ -4,14 +4,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build & Run Commands
 
-### Full Stack (Docker)
+### Docker — Development (default)
 ```bash
-# Start everything (infra + all services)
-docker-compose up -d
+# Full stack: docker-compose.override.yml is auto-loaded (Development mode, Swagger on, all ports exposed)
+docker compose up -d
 
-# Start infra only for hybrid local dev
-docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres-auth postgres-product postgres-inventory postgres-cart redis kafka
+# Infra only — then run services locally with `dotnet run`
+docker compose up -d postgres-auth postgres-product postgres-inventory postgres-cart redis kafka keycloak
 ```
+
+### Docker — Production
+```bash
+# Copy the template and fill in real secrets first (one-time setup)
+cp .env.production.example .env.production
+
+# Deploy production stack (override.yml is NOT applied here)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+### Environment files
+| File | Committed | Purpose |
+|---|---|---|
+| `.env.development` | yes | dev secrets (throwaway values) |
+| `.env.production.example` | yes | template for production |
+| `.env.production` | **no** | real prod secrets — gitignored |
+| `docker-compose.override.yml` | yes | auto-loaded dev settings |
+| `docker-compose.prod.yml` | yes | explicit prod settings |
 
 ### Individual Services (local)
 ```bash
