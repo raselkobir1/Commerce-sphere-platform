@@ -29,6 +29,8 @@ public class GlobalExceptionMiddleware(RequestDelegate next, ILogger<GlobalExcep
         var correlationId = context.GetCorrelationId();
         var traceId = context.TraceIdentifier;
 
+        // Map every known domain exception to an HTTP status code in one place so individual
+        // controllers never need try/catch blocks — they can throw and this middleware handles it.
         var (statusCode, message, errors) = exception switch
         {
             ValidationException vex   => (HttpStatusCode.BadRequest,        "Validation failed",        vex.Errors),
@@ -38,9 +40,11 @@ public class GlobalExceptionMiddleware(RequestDelegate next, ILogger<GlobalExcep
             ConflictException cex     => (HttpStatusCode.Conflict,           cex.Message,                Enumerable.Empty<string>()),
             ConcurrencyException cex  => (HttpStatusCode.Conflict,           cex.Message,                Enumerable.Empty<string>()),
             IdempotencyException iex  => (HttpStatusCode.Conflict,           iex.Message,                Enumerable.Empty<string>()),
+            // Unknown exception → 500; message is hidden from the client to avoid leaking internals.
             _                         => (HttpStatusCode.InternalServerError, "An unexpected error occurred.", Enumerable.Empty<string>())
         };
 
+        // Log 500s as Error (pages on-call); log known domain exceptions as Warning (expected, not alarming).
         if (statusCode == HttpStatusCode.InternalServerError)
             logger.LogError(exception, "Unhandled exception. CorrelationId: {CorrelationId}", correlationId);
         else

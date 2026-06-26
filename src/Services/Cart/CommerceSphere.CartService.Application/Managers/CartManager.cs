@@ -135,29 +135,39 @@ public class CartManager(
         if (!cart.Items.Any())
             throw new BusinessException("Cannot checkout an empty cart.");
 
+        // Mark the cart as CheckedOut in DB first so it can't be modified while the saga runs.
         cart.Checkout();
         uow.Carts.Update(cart);
         await uow.SaveChangesAsync(ct);
 
+        // Snapshot item details into the event payload because cart items could change
+        // (or the cart could be deleted) before Inventory consumes this event.
         var snapshots = cart.Items
             .Select(i => new CartItemSnapshot(i.ProductId, i.Sku, i.ProductName, i.Quantity, i.UnitPrice))
             .ToList()
             .AsReadOnly();
 
+        // Publishing CartCheckedOutEvent kicks off the checkout saga:
+        // Inventory Service consumes it → tries to reserve stock →
+        // replies with inventory-reserved (success) or inventory-reservation-failed (failure).
         await eventProducer.PublishCartCheckedOutAsync(new CartCheckedOutEvent(
             cart.Id, cart.UserId, cart.TotalAmount, snapshots, correlationId, DateTime.UtcNow));
 
+        // Cart is no longer active, so evict from cache to avoid serving stale data.
         await cacheService.RemoveCartAsync(cart.Id);
 
         logger.LogInformation("Cart {CartId} checked out. Saga initiated for user {UserId}", cart.Id, cart.UserId);
         return MapToResponse(cart);
     }
 
+    // Saga compensation path: called by InventorySagaConsumer when inventory reservation fails.
+    // Sets the cart to RolledBack so the user knows checkout did not complete.
     public async Task RollbackAsync(Guid cartId, string reason, CancellationToken ct = default)
     {
         var cart = await uow.Carts.GetByIdAsync(cartId, ct);
         if (cart is null)
         {
+            // Guard against duplicate failure events arriving after a previous rollback deleted/archived the cart.
             logger.LogWarning("Rollback requested for unknown cart {CartId}", cartId);
             return;
         }

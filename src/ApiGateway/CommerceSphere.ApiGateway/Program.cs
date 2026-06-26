@@ -36,6 +36,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateAudience = true,
             ValidAudience = builder.Configuration["Jwt:Audience"],
             ValidateLifetime = true,
+            // ClockSkew defaults to 5 minutes, which would silently accept tokens up to 5 min
+            // past their stated expiry. Zero enforces the exact expiry time we set in JwtService.
             ClockSkew = TimeSpan.Zero
         };
     });
@@ -48,6 +50,8 @@ builder.Services.AddAuthorization(opts =>
 
 builder.Services.AddRateLimiter(opts =>
 {
+    // 200 requests per minute per fixed window; up to 20 additional requests can queue
+    // rather than being rejected immediately, smoothing short traffic spikes.
     opts.AddFixedWindowLimiter("gateway-fixed", o =>
     {
         o.Window = TimeSpan.FromMinutes(1);
@@ -96,7 +100,10 @@ app.MapReverseProxy(pipeline =>
         if (!string.IsNullOrWhiteSpace(correlationId))
             context.Response.Headers["X-Correlation-Id"] = correlationId;
 
-        // Authenticated user-এর claims downstream-এ পাঠানো
+        // Forward the authenticated user's identity as trusted HTTP headers so downstream
+        // services can access UserId/Role without re-validating the JWT themselves.
+        // These headers are only set by the gateway (after JWT validation) — downstream
+        // services should reject any request where these headers come from outside.
         if (context.User.Identity?.IsAuthenticated == true)
         {
             var userId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
@@ -112,7 +119,7 @@ app.MapReverseProxy(pipeline =>
                 context.Request.Headers["X-User-Role"] = userRole;
 
             if (userName != null)
-                context.Request.Headers["X-User-Name"] = userName;    
+                context.Request.Headers["X-User-Name"] = userName;
         }
         await next();
     });

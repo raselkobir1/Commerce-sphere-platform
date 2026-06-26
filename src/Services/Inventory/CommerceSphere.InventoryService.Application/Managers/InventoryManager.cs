@@ -25,13 +25,15 @@ public class InventoryManager(
         if (await idempotencyService.IsProcessedAsync(request.IdempotencyKey, ct))
             throw new IdempotencyException(request.IdempotencyKey);
 
+        // Wrap all stock deductions in a DB transaction: if any single SKU is out of stock,
+        // the whole reservation rolls back — partial reservations are never committed.
         await uow.BeginTransactionAsync(ct);
         try
         {
             var reservationItems = new List<ReservationItem>();
             var inventoryItems = new List<InventoryItem>();
 
-            // Reserve stock for each item
+            // Reserve stock for each item in the request
             foreach (var item in request.Items)
             {
                 var inventoryItem = await uow.Inventory.GetByProductIdAsync(item.ProductId, ct)
@@ -87,12 +89,15 @@ public class InventoryManager(
         }
         catch (Exception ex) when (ex is not IdempotencyException)
         {
+            // IdempotencyException is excluded from this catch so it propagates to the caller
+            // without rolling back or publishing a failure event (the request was already handled).
             await uow.RollbackTransactionAsync(ct);
 
             logger.LogWarning(ex,
                 "Inventory reservation failed. CartId: {CartId}, CorrelationId: {CorrelationId}",
                 request.CartId, correlationId);
 
+            // Publish the failure event so the Cart Service saga consumer can roll back the cart.
             var failedEvt = new InventoryReservationFailedEvent(
                 CartId: request.CartId,
                 UserId: request.UserId,

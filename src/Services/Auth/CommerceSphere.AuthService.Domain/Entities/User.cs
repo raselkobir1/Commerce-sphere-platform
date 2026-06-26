@@ -12,6 +12,9 @@ public class User : BaseEntity
 
     public ICollection<RefreshToken> RefreshTokens { get; private set; } = [];
 
+    // Private constructor enforces that users can only be created through the factory method,
+    // keeping invariant validation in one place (DDD pattern). EF Core uses this constructor
+    // when materializing entities from the database via reflection.
     private User() { }
 
     public static User Create(string email, string passwordHash, string firstName, string lastName, string role = "Customer")
@@ -21,6 +24,7 @@ public class User : BaseEntity
 
         return new User
         {
+            // Normalise to lowercase so email lookups are case-insensitive without a DB collation change.
             Email = email.ToLowerInvariant(),
             PasswordHash = passwordHash,
             FirstName = firstName,

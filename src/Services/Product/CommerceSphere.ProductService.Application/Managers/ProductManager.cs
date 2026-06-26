@@ -19,6 +19,8 @@ public class ProductManager(
     public async Task<ProductResponse> CreateAsync(
         CreateProductRequest request, string correlationId, CancellationToken ct = default)
     {
+        // Normalise SKU to UPPER-CASE so "abc-001" and "ABC-001" are treated as the same SKU
+        // regardless of what the caller sends.
         var normalizedSku = request.Sku.Trim().ToUpperInvariant();
 
         if (await uow.Products.ExistsBySkuAsync(normalizedSku, ct))
@@ -40,6 +42,8 @@ public class ProductManager(
             "Product created. ProductId: {ProductId}, SKU: {Sku}, CorrelationId: {CorrelationId}",
             product.Id, product.Sku, correlationId);
 
+        // Publish event AFTER saving so the product ID is already in the DB before
+        // Inventory Service tries to create a matching InventoryItem.
         var evt = new ProductCreatedEvent(
             ProductId: product.Id,
             Name: product.Name,

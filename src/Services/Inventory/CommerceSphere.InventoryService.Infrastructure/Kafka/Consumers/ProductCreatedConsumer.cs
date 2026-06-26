@@ -139,7 +139,8 @@ public class ProductCreatedConsumer(
             productId: evt.ProductId,
             sku: evt.Sku,
             quantityOnHand: evt.InitialStock,
-            reorderLevel: 10); // default reorder level
+            // Default reorder level of 10 — warehouse team adjusts per-SKU via the adjust-stock endpoint.
+            reorderLevel: 10);
 
         await db.InventoryItems.AddAsync(inventoryItem, ct);
         await db.SaveChangesAsync(ct);

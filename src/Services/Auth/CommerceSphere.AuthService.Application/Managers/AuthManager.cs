@@ -40,6 +40,8 @@ public class AuthManager(
         LoginRequest request, string ipAddress, string correlationId, CancellationToken ct = default)
     {
         var user = await uow.Users.GetByEmailAsync(request.Email, ct)
+            // Return the same generic message whether email or password is wrong — prevents
+            // user-enumeration: an attacker cannot tell which one failed.
             ?? throw new UnauthorizedException("Invalid email or password.");
 
         if (!user.IsActive)
@@ -72,6 +74,8 @@ public class AuthManager(
         var user = await uow.Users.GetByIdAsync(existingToken.UserId, ct)
             ?? throw new NotFoundException(nameof(User), existingToken.UserId);
 
+        // Refresh token rotation: revoke the old token and issue a new one in a single save.
+        // Storing the replacement token chain lets us detect if a stolen old token is reused later.
         var newRefreshToken = RefreshToken.Create(user.Id, ipAddress);
         existingToken.Revoke(newRefreshToken.Token);
 

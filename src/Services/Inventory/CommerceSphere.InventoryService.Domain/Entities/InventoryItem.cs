@@ -7,10 +7,13 @@ public class InventoryItem : BaseEntity
     public Guid ProductId { get; private set; }
     public string Sku { get; private set; } = string.Empty;
     public int QuantityOnHand { get; private set; }
+    // QuantityReserved tracks stock committed to in-flight checkouts but not yet shipped.
+    // Keeping it separate from QuantityOnHand means physical stock stays accurate until fulfilment.
     public int QuantityReserved { get; private set; }
     public int ReorderLevel { get; private set; }
     public bool IsActive { get; private set; }
 
+    // The quantity a new order can actually claim — the only number that should be shown to buyers.
     public int QuantityAvailable => QuantityOnHand - QuantityReserved;
 
     private InventoryItem() { }
@@ -52,6 +55,8 @@ public class InventoryItem : BaseEntity
         if (qty <= 0)
             throw new BusinessException("Release quantity must be greater than zero.");
 
+        // Math.Max guards against a reserved count going negative if a release is replayed
+        // (e.g. a duplicate Kafka message arrives after a crash and retry).
         QuantityReserved = Math.Max(0, QuantityReserved - qty);
         SetUpdated();
     }

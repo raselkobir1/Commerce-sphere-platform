@@ -16,7 +16,10 @@ public class InventorySagaConsumer(
 {
     private const string InventoryReservedTopic = "inventory-reserved";
     private const string InventoryReservationFailedTopic = "inventory-reservation-failed";
+    // Consumer group ensures that if multiple Cart Service instances are running, each message
+    // is only processed by one of them (Kafka partitions are distributed across the group).
     private const string ConsumerGroup = "cart-inventory-saga-consumer";
+    // Dead Letter Queue: messages that fail all retries land here for manual inspection/replay.
     private const string DlqTopic = "dlq.cart-checkedout";
     private const int MaxRetries = 3;
 
@@ -29,7 +32,12 @@ public class InventorySagaConsumer(
         {
             BootstrapServers = configuration["Kafka:BootstrapServers"] ?? "kafka:9092",
             GroupId = ConsumerGroup,
+            // Earliest: on first run (no committed offset yet) start from the beginning of
+            // the topic so no events are missed.
             AutoOffsetReset = AutoOffsetReset.Earliest,
+            // Manual commit (after successful processing) gives us at-least-once delivery:
+            // if the process crashes mid-handling, the offset is not advanced and the
+            // message will be redelivered rather than silently lost.
             EnableAutoCommit = false
         };
 
@@ -82,6 +90,8 @@ public class InventorySagaConsumer(
             }
             catch (Exception ex) when (attempts < MaxRetries)
             {
+                // Exponential back-off (2^attempt seconds): 2s → 4s → 8s reduces pressure
+                // on a struggling downstream service compared to fixed-interval retries.
                 var delay = TimeSpan.FromSeconds(Math.Pow(2, attempts));
                 logger.LogWarning(ex,
                     "Message processing failed (attempt {Attempt}/{Max}). Retrying in {Delay}s. Topic={Topic} Partition={Partition} Offset={Offset}",
@@ -90,6 +100,8 @@ public class InventorySagaConsumer(
             }
             catch (Exception ex)
             {
+                // All retries exhausted — send to DLQ so the offset can still be committed
+                // and the consumer keeps moving without getting permanently stuck on one bad message.
                 logger.LogError(ex,
                     "Message permanently failed after {Max} attempts. Sending to DLQ {DlqTopic}. Topic={Topic} Partition={Partition} Offset={Offset}",
                     MaxRetries, DlqTopic, result.Topic, result.Partition, result.Offset);
@@ -103,6 +115,9 @@ public class InventorySagaConsumer(
     {
         logger.LogDebug("Processing message from topic {Topic}: {Value}", result.Topic, result.Message.Value);
 
+        // BackgroundService is a singleton but ICartManager is scoped (requires a DbContext).
+        // Creating a new DI scope per message is the standard way to resolve scoped services
+        // inside a singleton without causing lifetime issues.
         using var scope = scopeFactory.CreateScope();
         var cartManager = scope.ServiceProvider.GetRequiredService<ICartManager>();
 
@@ -144,6 +159,8 @@ public class InventorySagaConsumer(
             {
                 Key = result.Message.Key,
                 Value = result.Message.Value,
+                // Attach diagnostic headers so engineers can identify where the failure came from
+                // and replay the message without losing context.
                 Headers = new Headers
                 {
                     { "original-topic", System.Text.Encoding.UTF8.GetBytes(result.Topic) },

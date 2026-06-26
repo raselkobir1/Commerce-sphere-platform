@@ -38,6 +38,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateAudience = true,
             ValidAudience = builder.Configuration["Jwt:Audience"],
             ValidateLifetime = true,
+            // ClockSkew defaults to 5 minutes — zero enforces the exact expiry we set in JwtService.
             ClockSkew = TimeSpan.Zero
         };
     });
@@ -94,6 +95,8 @@ app.UseAuthorization();
 app.MapHealthChecks("/health");
 app.MapControllers();
 
+// Apply pending EF Core migrations automatically on startup so Docker containers
+// are always in sync with the latest schema without a manual migration step.
 await app.Services.MigrateAuthDbAsync();
 
 app.Run();

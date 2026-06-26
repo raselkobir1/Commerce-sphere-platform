@@ -27,7 +27,10 @@ public class JwtService(IConfiguration config) : IJwtService
             new Claim(ClaimTypes.Role, user.Role),
             new Claim("firstName", user.FirstName),
             new Claim("lastName", user.LastName),
+            // Jti (JWT ID) is a unique identifier per token; downstream services can use it
+            // to detect token replay if a revocation list is ever added.
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            // Iat (issued-at) lets consumers detect tokens issued before a password-reset event.
             new Claim(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
         };
 

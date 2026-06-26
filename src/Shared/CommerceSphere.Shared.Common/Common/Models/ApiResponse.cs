@@ -1,5 +1,7 @@
 namespace CommerceSphere.Shared.Common.Models;
 
+// Standard envelope for every API response. Including TraceId and CorrelationId lets clients
+// give engineers both IDs when reporting a bug, making log lookups trivial across services.
 public class ApiResponse<T>
 {
     public bool Success { get; init; }
@@ -16,6 +18,8 @@ public class ApiResponse<T>
         new() { Success = false, Message = message, Errors = errors ?? [], TraceId = traceId, CorrelationId = correlationId };
 }
 
+// Non-generic variant for responses that have no payload (e.g., logout, revoke-token).
+// Inheriting from ApiResponse<object> reuses the same JSON structure without duplicating fields.
 public class ApiResponse : ApiResponse<object>
 {
     public static ApiResponse Ok(string message = "Success", string traceId = "", string correlationId = "") =>

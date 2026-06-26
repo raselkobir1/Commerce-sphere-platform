@@ -9,8 +9,11 @@ namespace CommerceSphere.ProductService.Infrastructure.Redis;
 public class ProductCacheService(IConnectionMultiplexer redis, ILogger<ProductCacheService> logger) : IProductCacheService
 {
     private readonly IDatabase _db = redis.GetDatabase();
+    // 5-minute TTL balances freshness (price/stock updates are visible quickly) with reduced
+    // DB load for popular products that are read frequently.
     private static readonly TimeSpan DefaultTtl = TimeSpan.FromMinutes(5);
 
+    // "product:" prefix namespaces keys and avoids collision with other Redis data in the same instance.
     private static string CacheKey(Guid id) => $"product:{id}";
 
     public async Task<ProductResponse?> GetProductAsync(Guid id, CancellationToken ct = default)
@@ -25,6 +28,8 @@ public class ProductCacheService(IConnectionMultiplexer redis, ILogger<ProductCa
         }
         catch (Exception ex)
         {
+            // Cache is non-critical: a Redis outage should degrade to slower DB reads,
+            // not take down the Product Service entirely.
             logger.LogWarning(ex, "Redis GET failed for ProductId: {ProductId}. Falling back to database.", id);
             return null;
         }
@@ -39,6 +44,7 @@ public class ProductCacheService(IConnectionMultiplexer redis, ILogger<ProductCa
         }
         catch (Exception ex)
         {
+            // Swallow silently — failing to populate the cache is acceptable; next read hits DB.
             logger.LogWarning(ex, "Redis SET failed for ProductId: {ProductId}.", product.Id);
         }
     }

@@ -10,6 +10,8 @@ public enum CartStatus
 
 public class Cart : BaseEntity
 {
+    // Private backing list — domain logic is the only place that can add/remove items.
+    // The public Items property exposes a read-only view so callers cannot mutate the collection directly.
     private readonly List<CartItem> _items = [];
 
     public Guid UserId { get; private set; }
@@ -17,6 +19,7 @@ public class Cart : BaseEntity
     public string? IdempotencyKey { get; private set; }
     public ICollection<CartItem> Items => _items.AsReadOnly();
 
+    // Computed on-the-fly from items so it is always consistent with actual cart contents.
     public decimal TotalAmount => _items.Sum(i => i.UnitPrice * i.Quantity);
     public int ItemCount => _items.Count;
 
@@ -40,6 +43,8 @@ public class Cart : BaseEntity
         var existing = _items.FirstOrDefault(i => i.ProductId == productId);
         if (existing is not null)
         {
+            // If the product is already in the cart, increment its quantity rather than
+            // adding a duplicate line — keeps the cart clean from the user's perspective.
             existing.IncrementQuantity(quantity);
         }
         else

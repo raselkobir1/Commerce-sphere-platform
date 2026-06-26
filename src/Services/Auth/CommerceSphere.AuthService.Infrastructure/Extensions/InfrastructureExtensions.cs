@@ -18,10 +18,14 @@ public static class InfrastructureExtensions
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration config)
     {
         services.AddDbContext<AuthDbContext>(opts =>
+            // EnableRetryOnFailure handles transient Postgres connection drops (e.g. container restart)
+            // without requiring manual retry logic in the application layer.
             opts.UseNpgsql(config.GetConnectionString("AuthDb"),
                 npg => npg.EnableRetryOnFailure(3)));
 
         var redisConn = config.GetConnectionString("Redis") ?? "localhost:6379";
+        // IConnectionMultiplexer is a singleton because StackExchange.Redis manages an internal
+        // connection pool — creating one per-request would thrash connections.
         services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConn));
 
         services.AddScoped<IUnitOfWork, UnitOfWork.UnitOfWork>();
@@ -32,6 +36,8 @@ public static class InfrastructureExtensions
         return services;
     }
 
+    // Migrations are applied at startup rather than by a separate CLI step so that
+    // Docker containers self-migrate on first run without manual intervention.
     public static async Task MigrateAuthDbAsync(this IServiceProvider services)
     {
         using var scope = services.CreateScope();

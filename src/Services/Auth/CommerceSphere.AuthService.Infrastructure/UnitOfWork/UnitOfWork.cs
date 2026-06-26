@@ -12,9 +12,13 @@ public class UnitOfWork(AuthDbContext db) : IUnitOfWork
     private IRefreshTokenRepository? _refreshTokens;
     private IDbContextTransaction? _transaction;
 
+    // Repositories are created lazily so we don't pay allocation cost for repos that
+    // a given use-case never touches.
     public IUserRepository Users => _users ??= new UserRepository(db);
     public IRefreshTokenRepository RefreshTokens => _refreshTokens ??= new RefreshTokenRepository(db);
 
+    // Single SaveChanges call writes all tracked changes in one round-trip, making the
+    // entire use-case operation atomic from the database perspective.
     public Task<int> SaveChangesAsync(CancellationToken ct = default) => db.SaveChangesAsync(ct);
 
     public async Task BeginTransactionAsync(CancellationToken ct = default) =>
