@@ -31,4 +31,18 @@ public class UserRepository(AuthDbContext db) : IUserRepository
         var users = await query.Skip((pageNumber - 1) * pageSize).Take(pageSize).ToListAsync(ct);
         return (users, total);
     }
+
+    // SSO: find a local user via their social identity.
+    // Joins through ExternalLogins so we get the full User entity including RefreshTokens.
+    public Task<User?> GetByExternalLoginAsync(
+        string provider, string externalUserId, CancellationToken ct = default) =>
+        db.ExternalLogins
+            .Where(e => e.Provider == provider.ToLowerInvariant() && e.ExternalUserId == externalUserId)
+            .Select(e => e.User)
+            .Include(u => u!.RefreshTokens)
+            .FirstOrDefaultAsync(ct);
+
+    // SSO: persist a new ExternalLogin row linking a local user to their social account.
+    public async Task AddExternalLoginAsync(ExternalLogin login, CancellationToken ct = default) =>
+        await db.ExternalLogins.AddAsync(login, ct);
 }

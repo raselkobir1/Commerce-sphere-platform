@@ -2,6 +2,7 @@ using System.Text;
 using CommerceSphere.AuthService.Application.Interfaces;
 using CommerceSphere.AuthService.Application.Managers;
 using CommerceSphere.AuthService.Application.Validators;
+using CommerceSphere.AuthService.Infrastructure.Keycloak;
 using CommerceSphere.AuthService.Infrastructure.Extensions;
 using CommerceSphere.Shared.Common.Extensions;
 using FluentValidation;
@@ -51,6 +52,9 @@ builder.Services.AddAuthorization(opts =>
 
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<IAuthManager, AuthManager>();
+
+// Register the SSO manager — coordinates Keycloak token exchange and local user creation.
+builder.Services.AddScoped<ISsoManager, SsoManager>();
 
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();

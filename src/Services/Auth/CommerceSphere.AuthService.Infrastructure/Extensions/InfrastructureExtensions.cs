@@ -2,6 +2,7 @@ using CommerceSphere.AuthService.Application.Interfaces;
 using CommerceSphere.AuthService.Domain.Interfaces;
 using CommerceSphere.AuthService.Infrastructure.Data;
 using CommerceSphere.AuthService.Infrastructure.Kafka.Producers;
+using CommerceSphere.AuthService.Infrastructure.Keycloak;
 using CommerceSphere.AuthService.Infrastructure.Redis;
 using CommerceSphere.AuthService.Infrastructure.Services;
 using CommerceSphere.AuthService.Infrastructure.UnitOfWork;
@@ -32,6 +33,28 @@ public static class InfrastructureExtensions
         services.AddScoped<IJwtService, JwtService>();
         services.AddScoped<IIdempotencyService, RedisIdempotencyService>();
         services.AddSingleton<IUserEventProducer, UserEventProducer>();
+
+        // --- Keycloak / SSO ---
+        // Bind and eagerly validate Keycloak options so a missing ClientSecret or Authority
+        // causes a clear startup error rather than a confusing runtime failure at login time.
+        var keycloakSection = config.GetSection("Keycloak");
+        services.Configure<KeycloakOptions>(keycloakSection);
+
+        var keycloakOpts = keycloakSection.Get<KeycloakOptions>();
+        if (keycloakOpts is not null)
+        {
+            // Only validate when the section is present and a ClientSecret has been changed
+            // from the placeholder — allows running without SSO in envs that don't need it.
+            if (!string.IsNullOrWhiteSpace(keycloakOpts.Authority))
+                keycloakOpts.Validate();
+        }
+
+        // Named HttpClient for Keycloak — 15-second timeout because the code exchange
+        // is user-visible latency; failing fast is better than a hanging login screen.
+        services.AddHttpClient<IKeycloakService, KeycloakService>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(15);
+        });
 
         return services;
     }

@@ -12,6 +12,9 @@ public class User : BaseEntity
 
     public ICollection<RefreshToken> RefreshTokens { get; private set; } = [];
 
+    // Collection of linked social identities — populated by EF Core via Include() when needed.
+    public ICollection<ExternalLogin> ExternalLogins { get; private set; } = [];
+
     // Private constructor enforces that users can only be created through the factory method,
     // keeping invariant validation in one place (DDD pattern). EF Core uses this constructor
     // when materializing entities from the database via reflection.
@@ -30,6 +33,22 @@ public class User : BaseEntity
             FirstName = firstName,
             LastName = lastName,
             Role = role
+        };
+    }
+
+    // Factory for users who register via SSO — they have no local password.
+    // Storing an empty PasswordHash is intentional: BCrypt.Verify will always return false,
+    // so SSO-only users can never authenticate through the password login endpoint.
+    public static User CreateFromSso(string email, string firstName, string lastName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(email);
+        return new User
+        {
+            Email = email.ToLowerInvariant(),
+            PasswordHash = string.Empty,
+            FirstName = string.IsNullOrWhiteSpace(firstName) ? "Unknown" : firstName,
+            LastName = string.IsNullOrWhiteSpace(lastName) ? "User" : lastName,
+            Role = "Customer"
         };
     }
 

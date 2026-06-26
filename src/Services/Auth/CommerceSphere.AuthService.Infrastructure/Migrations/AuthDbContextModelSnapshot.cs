@@ -64,9 +64,34 @@ namespace CommerceSphere.AuthService.Infrastructure.Migrations
                 b.Navigation("User");
             });
 
+            modelBuilder.Entity("CommerceSphere.AuthService.Domain.Entities.ExternalLogin", b =>
+            {
+                b.Property<Guid>("Id").HasColumnName("id").HasColumnType("uuid");
+                b.Property<Guid>("UserId").HasColumnType("uuid").HasColumnName("user_id");
+                b.Property<string>("Provider").IsRequired().HasMaxLength(50).HasColumnType("character varying(50)").HasColumnName("provider");
+                b.Property<string>("ExternalUserId").IsRequired().HasMaxLength(256).HasColumnType("character varying(256)").HasColumnName("external_user_id");
+                b.Property<DateTime>("CreatedAt").HasColumnType("timestamp with time zone").HasColumnName("created_at");
+
+                b.HasKey("Id").HasName("PK_external_logins");
+                b.HasIndex("UserId").HasDatabaseName("ix_external_logins_user_id");
+                b.HasIndex("Provider", "ExternalUserId").IsUnique().HasDatabaseName("ix_external_logins_provider_external_user_id");
+                b.ToTable("external_logins");
+            });
+
+            modelBuilder.Entity("CommerceSphere.AuthService.Domain.Entities.ExternalLogin", b =>
+            {
+                b.HasOne("CommerceSphere.AuthService.Domain.Entities.User", "User")
+                    .WithMany("ExternalLogins")
+                    .HasForeignKey("UserId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+                b.Navigation("User");
+            });
+
             modelBuilder.Entity("CommerceSphere.AuthService.Domain.Entities.User", b =>
             {
                 b.Navigation("RefreshTokens");
+                b.Navigation("ExternalLogins");
             });
 #pragma warning restore 612, 618
         }

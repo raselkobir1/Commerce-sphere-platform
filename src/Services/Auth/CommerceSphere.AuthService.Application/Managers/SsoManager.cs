@@ -1,0 +1,130 @@
+using CommerceSphere.AuthService.Application.DTOs.Responses;
+using CommerceSphere.AuthService.Application.Interfaces;
+using CommerceSphere.AuthService.Domain.Entities;
+using CommerceSphere.AuthService.Domain.Interfaces;
+using CommerceSphere.Shared.Common.Exceptions;
+using Microsoft.Extensions.Logging;
+
+namespace CommerceSphere.AuthService.Application.Managers;
+
+// Orchestrates the SSO login flow:
+//   1. GetLoginUrlAsync   → delegates to KeycloakService to build the Keycloak auth URL
+//   2. HandleCallbackAsync → exchanges the Keycloak code for user info, then creates/links
+//      a local account and issues our own JWT — same token format as password login
+public class SsoManager(
+    IUnitOfWork uow,
+    IJwtService jwtService,
+    IKeycloakService keycloakService,
+    ILogger<SsoManager> logger) : ISsoManager
+{
+    public Task<SsoLoginUrlResponse> GetLoginUrlAsync(
+        string provider, string redirectUri, CancellationToken ct = default)
+    {
+        ValidateProvider(provider);
+
+        if (string.IsNullOrWhiteSpace(redirectUri))
+            throw new BusinessException("RedirectUri is required for SSO login.");
+
+        // KeycloakService generates a random state token, stores { provider, redirectUri }
+        // in Redis, and returns the full Keycloak authorization URL.
+        return keycloakService.BuildLoginUrlAsync(provider, redirectUri, ct);
+    }
+
+    public async Task<SsoCallbackResult> HandleCallbackAsync(
+        string code, string state, string ipAddress, string correlationId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+            throw new BusinessException("Authorization code is missing from the SSO callback.");
+
+        if (string.IsNullOrWhiteSpace(state))
+            throw new BusinessException("State parameter is missing — possible CSRF attempt.");
+
+        // Exchange the authorization code with Keycloak and retrieve the verified user identity.
+        // KeycloakService also validates the state token against Redis to prevent CSRF.
+        var (userInfo, provider, redirectUri) = await keycloakService.ProcessCallbackAsync(code, state, ct);
+
+        logger.LogInformation(
+            "SSO callback received. Provider: {Provider}, Email: {Email}, Sub: {Sub}, CorrelationId: {CorrelationId}",
+            provider, userInfo.Email, userInfo.Sub, correlationId);
+
+        // --- Resolve or create local user ---
+
+        // Step 1: look up an existing link by social identity (most common path for returning users).
+        var user = await uow.Users.GetByExternalLoginAsync(provider, userInfo.Sub, ct);
+
+        if (user is null)
+        {
+            // Step 2: try to find a locally-registered account with the same email.
+            // This handles the case where a user registered with email/password first and then
+            // tries to log in with the same email via Google — we link the accounts automatically.
+            user = await uow.Users.GetByEmailAsync(userInfo.Email, ct);
+
+            if (user is null)
+            {
+                // Step 3: first-ever login with this social identity — create a new local user.
+                user = User.CreateFromSso(userInfo.Email, userInfo.FirstName, userInfo.LastName);
+                await uow.Users.AddAsync(user, ct);
+
+                // Flush to DB now so user.Id is assigned before we create the ExternalLogin FK.
+                await uow.SaveChangesAsync(ct);
+
+                logger.LogInformation(
+                    "New SSO user created. UserId: {UserId}, Provider: {Provider}, CorrelationId: {CorrelationId}",
+                    user.Id, provider, correlationId);
+            }
+            else
+            {
+                logger.LogInformation(
+                    "Existing local user linked to SSO. UserId: {UserId}, Provider: {Provider}, CorrelationId: {CorrelationId}",
+                    user.Id, provider, correlationId);
+            }
+
+            // Create the ExternalLogin row so future logins via the same social account
+            // are resolved directly (Step 1 path) without checking by email again.
+            var externalLogin = ExternalLogin.Create(user.Id, provider, userInfo.Sub);
+            await uow.Users.AddExternalLoginAsync(externalLogin, ct);
+        }
+
+        if (!user.IsActive)
+            throw new UnauthorizedException("Account is deactivated.");
+
+        // Record last login timestamp (same as password login).
+        user.RecordLogin();
+        uow.Users.Update(user);
+
+        var refreshToken = RefreshToken.Create(user.Id, ipAddress);
+        await uow.RefreshTokens.AddAsync(refreshToken, ct);
+        await uow.SaveChangesAsync(ct);
+
+        logger.LogInformation(
+            "SSO login complete. UserId: {UserId}, Provider: {Provider}, CorrelationId: {CorrelationId}",
+            user.Id, provider, correlationId);
+
+        var tokenResponse = new AuthTokenResponse(
+            AccessToken: jwtService.GenerateAccessToken(user),
+            RefreshToken: refreshToken.Token,
+            ExpiresAt: jwtService.GetAccessTokenExpiry(),
+            User: new UserResponse(user.Id, user.Email, user.FirstName, user.LastName,
+                                   user.Role, user.IsActive, user.CreatedAt, user.LastLoginAt));
+
+        return new SsoCallbackResult(tokenResponse, redirectUri);
+    }
+
+    public IReadOnlyList<string> GetAvailableProviders() =>
+        keycloakService.GetConfiguredProviders();
+
+    // Non-destructive lookup — used to send the user back to the correct frontend URL on error.
+    public Task<string?> GetRedirectUriForErrorAsync(string state, CancellationToken ct = default) =>
+        keycloakService.PeekRedirectUriAsync(state, ct);
+
+    private void ValidateProvider(string provider)
+    {
+        if (string.IsNullOrWhiteSpace(provider))
+            throw new BusinessException("Provider name is required.");
+
+        var available = keycloakService.GetConfiguredProviders();
+        if (!available.Contains(provider.ToLowerInvariant()))
+            throw new BusinessException(
+                $"Provider '{provider}' is not configured. Available: {string.Join(", ", available)}.");
+    }
+}
