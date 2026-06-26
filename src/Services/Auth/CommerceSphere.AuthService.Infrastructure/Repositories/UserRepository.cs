@@ -32,9 +32,6 @@ public class UserRepository(AuthDbContext db) : IUserRepository
         return (users, total);
     }
 
-    // SSO: find a local user via their social identity.
-    // Two-step query because EF Core silently ignores .Include() after .Select() —
-    // the Include must be applied to an IQueryable<User>, not to a projection.
     public async Task<User?> GetByExternalLoginAsync(
         string provider, string externalUserId, CancellationToken ct = default)
     {
@@ -50,7 +47,15 @@ public class UserRepository(AuthDbContext db) : IUserRepository
             .FirstOrDefaultAsync(u => u.Id == userId, ct);
     }
 
-    // SSO: persist a new ExternalLogin row linking a local user to their social account.
     public async Task AddExternalLoginAsync(ExternalLogin login, CancellationToken ct = default) =>
         await db.ExternalLogins.AddAsync(login, ct);
+
+    public Task<User?> GetByEmailVerificationTokenAsync(string token, CancellationToken ct = default) =>
+        db.Users.FirstOrDefaultAsync(
+            u => u.EmailVerificationToken == token && u.EmailVerificationTokenExpiry > DateTime.UtcNow, ct);
+
+    public Task<User?> GetByPasswordResetTokenAsync(string token, CancellationToken ct = default) =>
+        db.Users.Include(u => u.RefreshTokens)
+            .FirstOrDefaultAsync(
+                u => u.PasswordResetToken == token && u.PasswordResetTokenExpiry > DateTime.UtcNow, ct);
 }

@@ -15,6 +15,9 @@ public class AuthManager(
     IUnitOfWork uow,
     IJwtService jwtService,
     IUserEventProducer eventProducer,
+    IEmailService emailService,
+    IChallengeTokenService challengeTokenService,
+    IOtpCodeService otpCodeService,
     ILogger<AuthManager> logger) : IAuthManager
 {
     public async Task<AuthTokenResponse> RegisterAsync(
@@ -26,6 +29,9 @@ public class AuthManager(
         var passwordHash = BC.HashPassword(request.Password);
         var user = User.Create(request.Email, passwordHash, request.FirstName, request.LastName, request.Role);
 
+        // Generate email verification token before first save so the token is durable.
+        var verificationToken = user.GenerateEmailVerificationToken();
+
         await uow.Users.AddAsync(user, ct);
 
         var refreshToken = RefreshToken.Create(user.Id, ipAddress);
@@ -35,39 +41,72 @@ public class AuthManager(
 
         logger.LogInformation("User registered. UserId: {UserId}, CorrelationId: {CorrelationId}", user.Id, correlationId);
 
-        // Publish after SaveChanges so the event is only sent when the user row is committed.
-        // Downstream services (Inventory) use this to sync a stock-owner record.
         await eventProducer.PublishUserCreatedAsync(
             new UserCreatedEvent(user.Id, user.Email, user.FirstName, user.LastName,
                                  user.Role, DateTime.UtcNow, correlationId), ct);
 
+        // Fire-and-forget: verification email failure should not break registration.
+        _ = emailService.SendEmailVerificationAsync(user.Email, user.FirstName, verificationToken, ct)
+            .ContinueWith(t => logger.LogWarning(t.Exception, "Failed to send verification email to {Email}", user.Email),
+                TaskContinuationOptions.OnlyOnFaulted);
+
         return BuildTokenResponse(user, refreshToken);
     }
 
-    public async Task<AuthTokenResponse> LoginAsync(
+    public async Task<LoginResult> LoginAsync(
         LoginRequest request, string ipAddress, string correlationId, CancellationToken ct = default)
     {
         var user = await uow.Users.GetByEmailAsync(request.Email, ct)
-            // Return the same generic message whether email or password is wrong — prevents
-            // user-enumeration: an attacker cannot tell which one failed.
             ?? throw new UnauthorizedException("Invalid email or password.");
+
+        if (user.IsLockedOut())
+            throw new UnauthorizedException("Account is temporarily locked due to too many failed attempts. Try again later.");
 
         if (!user.IsActive)
             throw new UnauthorizedException("Account is deactivated.");
 
         if (!BC.Verify(request.Password, user.PasswordHash))
+        {
+            user.RecordFailedLogin();
+            uow.Users.Update(user);
+            await uow.SaveChangesAsync(ct);
             throw new UnauthorizedException("Invalid email or password.");
+        }
 
-        user.RecordLogin();
-        uow.Users.Update(user);
+        logger.LogInformation("User authenticated. UserId: {UserId}, CorrelationId: {CorrelationId}", user.Id, correlationId);
 
-        var refreshToken = RefreshToken.Create(user.Id, ipAddress);
-        await uow.RefreshTokens.AddAsync(refreshToken, ct);
-        await uow.SaveChangesAsync(ct);
+        // 2FA takes priority over OTP when both are enabled.
+        if (user.IsActiveTwoFactor && user.TwoFactorConfirmed)
+        {
+            var challengeToken = await challengeTokenService.CreateAsync(user.Id, ChallengeType.TwoFactor, ct);
+            return new LoginNeedsTwoFactor(challengeToken);
+        }
 
-        logger.LogInformation("User logged in. UserId: {UserId}, CorrelationId: {CorrelationId}", user.Id, correlationId);
+        if (user.IsOtpAuthEnable)
+        {
+            var otp = await otpCodeService.GenerateAndStoreAsync(user.Id, ct);
+            _ = emailService.SendOtpAsync(user.Email, user.FirstName, otp, ct)
+                .ContinueWith(t => logger.LogWarning(t.Exception, "Failed to send OTP to {Email}", user.Email),
+                    TaskContinuationOptions.OnlyOnFaulted);
 
-        return BuildTokenResponse(user, refreshToken);
+            var challengeToken = await challengeTokenService.CreateAsync(user.Id, ChallengeType.Otp, ct);
+            return new LoginNeedsOtp(challengeToken);
+        }
+
+        return await CompleteLoginAsync(user, ipAddress, ct);
+    }
+
+    // Called after a successful 2FA or OTP challenge — issues tokens.
+    public async Task<LoginResult> CompleteLoginForChallengeAsync(
+        Guid userId, string ipAddress, CancellationToken ct = default)
+    {
+        var user = await uow.Users.GetByIdAsync(userId, ct)
+            ?? throw new NotFoundException(nameof(User), userId);
+
+        if (!user.IsActive)
+            throw new UnauthorizedException("Account is deactivated.");
+
+        return await CompleteLoginAsync(user, ipAddress, ct);
     }
 
     public async Task<AuthTokenResponse> RefreshTokenAsync(
@@ -82,8 +121,6 @@ public class AuthManager(
         var user = await uow.Users.GetByIdAsync(existingToken.UserId, ct)
             ?? throw new NotFoundException(nameof(User), existingToken.UserId);
 
-        // Refresh token rotation: revoke the old token and issue a new one in a single save.
-        // Storing the replacement token chain lets us detect if a stolen old token is reused later.
         var newRefreshToken = RefreshToken.Create(user.Id, ipAddress);
         existingToken.Revoke(newRefreshToken.Token);
 
@@ -120,7 +157,19 @@ public class AuthManager(
         return MapToResponse(user);
     }
 
-    private AuthTokenResponse BuildTokenResponse(User user, RefreshToken refreshToken) =>
+    private async Task<LoginResult> CompleteLoginAsync(User user, string ipAddress, CancellationToken ct)
+    {
+        user.RecordLogin();
+        uow.Users.Update(user);
+
+        var refreshToken = RefreshToken.Create(user.Id, ipAddress);
+        await uow.RefreshTokens.AddAsync(refreshToken, ct);
+        await uow.SaveChangesAsync(ct);
+
+        return new LoginSucceeded(BuildTokenResponse(user, refreshToken));
+    }
+
+    internal AuthTokenResponse BuildTokenResponse(User user, RefreshToken refreshToken) =>
         new(
             AccessToken: jwtService.GenerateAccessToken(user),
             RefreshToken: refreshToken.Token,
@@ -128,6 +177,8 @@ public class AuthManager(
             User: MapToResponse(user)
         );
 
-    private static UserResponse MapToResponse(User u) =>
-        new(u.Id, u.Email, u.FirstName, u.LastName, u.Role, u.IsActive, u.CreatedAt, u.LastLoginAt);
+    internal static UserResponse MapToResponse(User u) =>
+        new(u.Id, u.Email, u.FirstName, u.LastName, u.Role, u.IsActive,
+            u.EmailVerified, u.IsActiveTwoFactor, u.TwoFactorConfirmed, u.IsOtpAuthEnable,
+            u.CreatedAt, u.LastLoginAt);
 }

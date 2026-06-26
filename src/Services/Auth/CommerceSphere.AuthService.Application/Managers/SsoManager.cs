@@ -140,8 +140,7 @@ public class SsoManager(
             AccessToken: jwtService.GenerateAccessToken(user),
             RefreshToken: refreshToken.Token,
             ExpiresAt: jwtService.GetAccessTokenExpiry(),
-            User: new UserResponse(user.Id, user.Email, user.FirstName, user.LastName,
-                                   user.Role, user.IsActive, user.CreatedAt, user.LastLoginAt));
+            User: AuthManager.MapToResponse(user));
 
         return new SsoCallbackResult(tokenResponse, redirectUri);
     }

@@ -22,8 +22,27 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.UpdatedAt).HasColumnName("updated_at");
         builder.Property(u => u.LastLoginAt).HasColumnName("last_login_at");
 
-        // Map RowVersion to PostgreSQL's built-in xmin system column for optimistic concurrency.
-        // xmin is automatically updated by Postgres on every row modification — no app-side write needed.
+        // Email verification
+        builder.Property(u => u.EmailVerified).HasColumnName("email_verified").HasDefaultValue(false);
+        builder.Property(u => u.EmailVerificationToken).HasColumnName("email_verification_token").HasMaxLength(128);
+        builder.Property(u => u.EmailVerificationTokenExpiry).HasColumnName("email_verification_token_expiry");
+
+        // Two-factor auth
+        builder.Property(u => u.IsActiveTwoFactor).HasColumnName("is_active_two_factor").HasDefaultValue(false);
+        builder.Property(u => u.TwoFactorSecret).HasColumnName("two_factor_secret").HasMaxLength(256);
+        builder.Property(u => u.TwoFactorConfirmed).HasColumnName("two_factor_confirmed").HasDefaultValue(false);
+
+        // OTP auth
+        builder.Property(u => u.IsOtpAuthEnable).HasColumnName("is_otp_auth_enable").HasDefaultValue(false);
+
+        // Password reset
+        builder.Property(u => u.PasswordResetToken).HasColumnName("password_reset_token").HasMaxLength(128);
+        builder.Property(u => u.PasswordResetTokenExpiry).HasColumnName("password_reset_token_expiry");
+
+        // Account lockout
+        builder.Property(u => u.FailedLoginAttempts).HasColumnName("failed_login_attempts").HasDefaultValue(0);
+        builder.Property(u => u.LockoutEnd).HasColumnName("lockout_end");
+
         builder.Property(u => u.RowVersion)
             .HasColumnName("xmin")
             .HasColumnType("xid")
@@ -31,6 +50,8 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             .IsConcurrencyToken();
 
         builder.HasIndex(u => u.Email).IsUnique().HasDatabaseName("ix_users_email");
+        builder.HasIndex(u => u.EmailVerificationToken).HasDatabaseName("ix_users_email_verification_token");
+        builder.HasIndex(u => u.PasswordResetToken).HasDatabaseName("ix_users_password_reset_token");
 
         builder.HasMany(u => u.RefreshTokens)
             .WithOne(r => r.User)

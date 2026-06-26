@@ -1,4 +1,5 @@
 using CommerceSphere.AuthService.Application.DTOs.Requests;
+using CommerceSphere.AuthService.Application.DTOs.Responses;
 using CommerceSphere.AuthService.Application.Interfaces;
 using CommerceSphere.Shared.Common.Correlation;
 using CommerceSphere.Shared.Common.Models;
@@ -22,7 +23,7 @@ public class AuthController(IAuthManager authManager) : ControllerBase
         var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         var result = await authManager.RegisterAsync(request, ip, correlationId, ct);
         return CreatedAtAction(nameof(GetMe), null,
-            ApiResponse<object>.Ok(result, "Registration successful", HttpContext.TraceIdentifier, correlationId));
+            ApiResponse<object>.Ok(result, "Registration successful. Check your email to verify your account.", HttpContext.TraceIdentifier, correlationId));
     }
 
     [HttpPost("login")]
@@ -33,7 +34,26 @@ public class AuthController(IAuthManager authManager) : ControllerBase
         var correlationId = HttpContext.GetCorrelationId();
         var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         var result = await authManager.LoginAsync(request, ip, correlationId, ct);
-        return Ok(ApiResponse<object>.Ok(result, "Login successful", HttpContext.TraceIdentifier, correlationId));
+
+        return result switch
+        {
+            LoginSucceeded s =>
+                Ok(ApiResponse<object>.Ok(s.Tokens, "Login successful", HttpContext.TraceIdentifier, correlationId)),
+
+            LoginNeedsTwoFactor t =>
+                Ok(ApiResponse<object>.Ok(
+                    new { requiresTwoFactor = true, t.ChallengeToken },
+                    "Two-factor authentication required. Submit the code to /api/auth/2fa/verify.",
+                    HttpContext.TraceIdentifier, correlationId)),
+
+            LoginNeedsOtp o =>
+                Ok(ApiResponse<object>.Ok(
+                    new { requiresOtp = true, o.ChallengeToken },
+                    "A one-time code has been sent to your email. Submit it to /api/auth/otp/verify.",
+                    HttpContext.TraceIdentifier, correlationId)),
+
+            _ => throw new InvalidOperationException("Unexpected login result type.")
+        };
     }
 
     [HttpPost("refresh-token")]
@@ -60,8 +80,7 @@ public class AuthController(IAuthManager authManager) : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetMe(CancellationToken ct)
     {
-        var userId = Guid.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-            ?? User.FindFirst("sub")?.Value ?? throw new UnauthorizedAccessException());
+        var userId = GetUserId();
         var user = await authManager.GetUserByIdAsync(userId, ct);
         return Ok(ApiResponse<object>.Ok(user, "User retrieved", HttpContext.TraceIdentifier, HttpContext.GetCorrelationId()));
     }
@@ -74,4 +93,8 @@ public class AuthController(IAuthManager authManager) : ControllerBase
         var result = await authManager.GetUsersAsync(paged, ct);
         return Ok(ApiResponse<object>.Ok(result, "Users retrieved", HttpContext.TraceIdentifier, HttpContext.GetCorrelationId()));
     }
+
+    private Guid GetUserId() =>
+        Guid.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+            ?? User.FindFirst("sub")?.Value ?? throw new UnauthorizedAccessException());
 }

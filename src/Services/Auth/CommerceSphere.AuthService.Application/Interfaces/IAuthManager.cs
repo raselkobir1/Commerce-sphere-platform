@@ -7,7 +7,7 @@ namespace CommerceSphere.AuthService.Application.Interfaces;
 public interface IAuthManager
 {
     Task<AuthTokenResponse> RegisterAsync(RegisterRequest request, string ipAddress, string correlationId, CancellationToken ct = default);
-    Task<AuthTokenResponse> LoginAsync(LoginRequest request, string ipAddress, string correlationId, CancellationToken ct = default);
+    Task<LoginResult> LoginAsync(LoginRequest request, string ipAddress, string correlationId, CancellationToken ct = default);
     Task<AuthTokenResponse> RefreshTokenAsync(RefreshTokenRequest request, string ipAddress, CancellationToken ct = default);
     Task RevokeTokenAsync(RevokeTokenRequest request, CancellationToken ct = default);
     Task<PagedResult<UserResponse>> GetUsersAsync(PagedRequest paged, CancellationToken ct = default);

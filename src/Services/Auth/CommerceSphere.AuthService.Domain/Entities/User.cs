@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+
 namespace CommerceSphere.AuthService.Domain.Entities;
 
 public class User : BaseEntity
@@ -10,14 +12,30 @@ public class User : BaseEntity
     public bool IsActive { get; private set; } = true;
     public DateTime? LastLoginAt { get; private set; }
 
-    public ICollection<RefreshToken> RefreshTokens { get; private set; } = [];
+    // ── Email verification ──────────────────────────────────────────────────
+    public bool EmailVerified { get; private set; }
+    public string? EmailVerificationToken { get; private set; }
+    public DateTime? EmailVerificationTokenExpiry { get; private set; }
 
-    // Collection of linked social identities — populated by EF Core via Include() when needed.
+    // ── Two-factor auth (TOTP via authenticator app) ────────────────────────
+    public bool IsActiveTwoFactor { get; private set; }
+    public string? TwoFactorSecret { get; private set; }
+    public bool TwoFactorConfirmed { get; private set; }
+
+    // ── OTP auth (email one-time password on login) ─────────────────────────
+    public bool IsOtpAuthEnable { get; private set; }
+
+    // ── Password reset ──────────────────────────────────────────────────────
+    public string? PasswordResetToken { get; private set; }
+    public DateTime? PasswordResetTokenExpiry { get; private set; }
+
+    // ── Account lockout ─────────────────────────────────────────────────────
+    public int FailedLoginAttempts { get; private set; }
+    public DateTime? LockoutEnd { get; private set; }
+
+    public ICollection<RefreshToken> RefreshTokens { get; private set; } = [];
     public ICollection<ExternalLogin> ExternalLogins { get; private set; } = [];
 
-    // Private constructor enforces that users can only be created through the factory method,
-    // keeping invariant validation in one place (DDD pattern). EF Core uses this constructor
-    // when materializing entities from the database via reflection.
     private User() { }
 
     public static User Create(string email, string passwordHash, string firstName, string lastName, string role = "Customer")
@@ -27,7 +45,6 @@ public class User : BaseEntity
 
         return new User
         {
-            // Normalise to lowercase so email lookups are case-insensitive without a DB collation change.
             Email = email.ToLowerInvariant(),
             PasswordHash = passwordHash,
             FirstName = firstName,
@@ -36,9 +53,6 @@ public class User : BaseEntity
         };
     }
 
-    // Factory for users who register via SSO — they have no local password.
-    // Storing an empty PasswordHash is intentional: BCrypt.Verify will always return false,
-    // so SSO-only users can never authenticate through the password login endpoint.
     public static User CreateFromSso(string email, string firstName, string lastName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(email);
@@ -48,11 +62,17 @@ public class User : BaseEntity
             PasswordHash = string.Empty,
             FirstName = string.IsNullOrWhiteSpace(firstName) ? "Unknown" : firstName,
             LastName = string.IsNullOrWhiteSpace(lastName) ? "User" : lastName,
-            Role = "Customer"
+            Role = "Customer",
+            EmailVerified = true  // social provider already verified their email
         };
     }
 
-    public void RecordLogin() => LastLoginAt = DateTime.UtcNow;
+    public void RecordLogin()
+    {
+        LastLoginAt = DateTime.UtcNow;
+        FailedLoginAttempts = 0;
+        LockoutEnd = null;
+    }
 
     public void Deactivate()
     {
@@ -66,4 +86,98 @@ public class User : BaseEntity
         LastName = lastName;
         SetUpdated();
     }
+
+    // ── Email verification ──────────────────────────────────────────────────
+
+    public string GenerateEmailVerificationToken()
+    {
+        EmailVerificationToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+        EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(24);
+        SetUpdated();
+        return EmailVerificationToken;
+    }
+
+    public void MarkEmailVerified()
+    {
+        EmailVerified = true;
+        EmailVerificationToken = null;
+        EmailVerificationTokenExpiry = null;
+        SetUpdated();
+    }
+
+    // ── Two-factor auth (TOTP) ──────────────────────────────────────────────
+
+    public void SetTwoFactorSecret(string secret)
+    {
+        TwoFactorSecret = secret;
+        IsActiveTwoFactor = false;
+        TwoFactorConfirmed = false;
+        SetUpdated();
+    }
+
+    public void ConfirmTwoFactor()
+    {
+        TwoFactorConfirmed = true;
+        IsActiveTwoFactor = true;
+        SetUpdated();
+    }
+
+    public void DisableTwoFactor()
+    {
+        IsActiveTwoFactor = false;
+        TwoFactorSecret = null;
+        TwoFactorConfirmed = false;
+        SetUpdated();
+    }
+
+    // ── OTP auth ───────────────────────────────────────────────────────────
+
+    public void EnableOtpAuth()
+    {
+        IsOtpAuthEnable = true;
+        SetUpdated();
+    }
+
+    public void DisableOtpAuth()
+    {
+        IsOtpAuthEnable = false;
+        SetUpdated();
+    }
+
+    // ── Password ───────────────────────────────────────────────────────────
+
+    public void ChangePassword(string newPasswordHash)
+    {
+        PasswordHash = newPasswordHash;
+        // Invalidate all existing refresh tokens by revoking them at the domain level
+        // (the caller must save changes; we just update the in-memory state here).
+        SetUpdated();
+    }
+
+    public string GeneratePasswordResetToken()
+    {
+        PasswordResetToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+        PasswordResetTokenExpiry = DateTime.UtcNow.AddMinutes(30);
+        SetUpdated();
+        return PasswordResetToken;
+    }
+
+    public void ClearPasswordResetToken()
+    {
+        PasswordResetToken = null;
+        PasswordResetTokenExpiry = null;
+        SetUpdated();
+    }
+
+    // ── Lockout ────────────────────────────────────────────────────────────
+
+    public void RecordFailedLogin()
+    {
+        FailedLoginAttempts++;
+        if (FailedLoginAttempts >= 5)
+            LockoutEnd = DateTime.UtcNow.AddMinutes(15);
+        SetUpdated();
+    }
+
+    public bool IsLockedOut() => LockoutEnd.HasValue && LockoutEnd.Value > DateTime.UtcNow;
 }

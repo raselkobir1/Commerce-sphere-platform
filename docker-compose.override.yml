@@ -38,6 +38,9 @@ services:
       Keycloak__Providers__0: "google"
       Keycloak__Providers__1: "github"
       Keycloak__Providers__2: "facebook"
+      Email__SmtpHost: "mailpit"
+      Email__SmtpPort: "1025"
+      Email__AppBaseUrl: "http://localhost:5000"
 
   product-service:
     env_file: .env.development
@@ -149,6 +152,18 @@ services:
       PGADMIN_DEFAULT_PASSWORD: admin
     volumes:
       - pgadmin-data:/var/lib/pgadmin
+    networks:
+      - commerce-net
+
+  # Mailpit — local SMTP trap. Catches all outbound emails (no real delivery).
+  # Web UI at http://localhost:8025 — view verification emails, OTP codes, reset links.
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: mailpit
+    restart: unless-stopped
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI
     networks:
       - commerce-net
 
