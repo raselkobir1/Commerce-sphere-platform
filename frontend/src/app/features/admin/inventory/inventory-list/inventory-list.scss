@@ -1,0 +1,37 @@
+.page-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0 0 1.25rem;
+  color: #16223d;
+}
+.table-card {
+  background: #fff;
+  border: 1px solid #e7eaf1;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.full {
+  width: 100%;
+}
+.low {
+  color: #b3261e;
+  font-weight: 700;
+}
+.low-tag {
+  margin-left: 0.4rem;
+  font-size: 0.7rem;
+  background: #fde7e7;
+  color: #b3261e;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+}
+.actions {
+  white-space: nowrap;
+}
+.qty {
+  width: 72px;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #cfd6e4;
+  border-radius: 6px;
+  margin-right: 0.5rem;
+}

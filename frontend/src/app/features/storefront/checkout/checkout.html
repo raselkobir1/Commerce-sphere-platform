@@ -1,0 +1,46 @@
+@if (placing()) {
+  <mat-progress-bar mode="indeterminate" />
+}
+
+@if (placed()) {
+  <div class="done">
+    <mat-icon>check_circle</mat-icon>
+    <h1>Order placed!</h1>
+    <p>Your checkout is being processed. We've reserved your items and you'll get a confirmation shortly.</p>
+    <button mat-flat-button color="primary" (click)="backToShop()">Continue shopping</button>
+  </div>
+} @else {
+  <h1 class="page-title">Checkout</h1>
+
+  @if (cart(); as c) {
+    @if (c.items.length === 0) {
+      <div class="empty">
+        <p>Your cart is empty.</p>
+        <a mat-flat-button color="primary" routerLink="/shop">Browse products</a>
+      </div>
+    } @else {
+      <div class="layout">
+        <div class="review">
+          <h2>Order review</h2>
+          @for (item of c.items; track item.id) {
+            <div class="line-item">
+              <span>{{ item.quantity }} × {{ item.productName }}</span>
+              <span>{{ item.lineTotal | currency }}</span>
+            </div>
+          }
+        </div>
+
+        <aside class="summary">
+          <div class="row total">
+            <span>Total due</span>
+            <span>{{ total() | currency }}</span>
+          </div>
+          <button mat-flat-button color="primary" class="place" (click)="placeOrder()" [disabled]="placing()">
+            Place order
+          </button>
+          <a mat-button routerLink="/shop/cart">Back to cart</a>
+        </aside>
+      </div>
+    }
+  }
+}

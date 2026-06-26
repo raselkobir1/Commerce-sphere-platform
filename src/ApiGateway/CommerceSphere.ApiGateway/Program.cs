@@ -48,6 +48,21 @@ builder.Services.AddAuthorization(opts =>
     opts.AddPolicy("CustomerOrAdmin", p => p.RequireRole("Customer", "Admin"));
 });
 
+// CORS for the Angular SPA. Origins are configurable (Cors:AllowedOrigins) so production
+// can lock this down to the deployed frontend domain; dev defaults to the ng serve origin.
+const string SpaCorsPolicy = "SpaCors";
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+    ?? ["http://localhost:4200"];
+builder.Services.AddCors(opts =>
+{
+    opts.AddPolicy(SpaCorsPolicy, policy => policy
+        .WithOrigins(allowedOrigins)
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        // Let the browser read the correlation id back for client-side tracing.
+        .WithExposedHeaders("X-Correlation-Id"));
+});
+
 builder.Services.AddRateLimiter(opts =>
 {
     // 200 requests per minute per fixed window; up to 20 additional requests can queue
@@ -87,6 +102,9 @@ app.UseSerilogRequestLogging(opts =>
             httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown");
     };
 });
+
+// CORS must run before auth so preflight (OPTIONS) requests are answered without a token.
+app.UseCors(SpaCorsPolicy);
 
 app.UseRateLimiter();
 app.UseAuthentication();

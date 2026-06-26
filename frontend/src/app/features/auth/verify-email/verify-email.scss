@@ -1,0 +1,15 @@
+@use '../auth-form' as *;
+
+.state-icon {
+  font-size: 3rem;
+  width: 3rem;
+  height: 3rem;
+  margin-bottom: 0.5rem;
+
+  &.ok {
+    color: #1b8a4b;
+  }
+  &.bad {
+    color: #b3261e;
+  }
+}

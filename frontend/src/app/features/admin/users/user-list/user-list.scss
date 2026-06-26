@@ -1,0 +1,36 @@
+.page-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0 0 1.25rem;
+  color: #16223d;
+}
+.table-card {
+  background: #fff;
+  border: 1px solid #e7eaf1;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.full {
+  width: 100%;
+}
+.chip {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  background: #eceef3;
+  color: #6b7589;
+
+  &.admin {
+    background: #efe7ff;
+    color: #6b34d6;
+  }
+  &.active {
+    background: #e3f6ec;
+    color: #1b8a4b;
+  }
+}
+.verified {
+  color: #1b8a4b;
+  font-size: 1rem;
+  vertical-align: middle;
+}

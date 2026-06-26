@@ -1,0 +1,31 @@
+.page-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0 0 1.25rem;
+  color: #16223d;
+}
+.card {
+  max-width: 720px;
+}
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+
+  mat-form-field {
+    width: 100%;
+  }
+}
+.row {
+  display: flex;
+  gap: 0.75rem;
+
+  mat-form-field {
+    flex: 1;
+  }
+}
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}

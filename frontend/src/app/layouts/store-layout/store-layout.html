@@ -1,0 +1,41 @@
+<mat-toolbar class="navbar">
+  <a routerLink="/shop" class="brand">
+    <span class="logo">◆</span>
+    <span class="name">CommerceSphere</span>
+  </a>
+
+  <nav class="links">
+    <a routerLink="/shop" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Shop</a>
+  </nav>
+
+  <span class="spacer"></span>
+
+  <a mat-icon-button routerLink="/shop/cart" aria-label="Cart">
+    <mat-icon [matBadge]="itemCount() || null" matBadgeColor="warn" matBadgeSize="small">shopping_cart</mat-icon>
+  </a>
+
+  <button mat-button [matMenuTriggerFor]="menu">
+    <mat-icon>account_circle</mat-icon>
+    {{ user()?.firstName }}
+  </button>
+  <mat-menu #menu="matMenu">
+    @if (isAdmin()) {
+      <a mat-menu-item routerLink="/admin">
+        <mat-icon>dashboard</mat-icon>
+        <span>Admin dashboard</span>
+      </a>
+    }
+    <a mat-menu-item routerLink="/shop/account">
+      <mat-icon>settings</mat-icon>
+      <span>Account &amp; security</span>
+    </a>
+    <button mat-menu-item (click)="logout()">
+      <mat-icon>logout</mat-icon>
+      <span>Sign out</span>
+    </button>
+  </mat-menu>
+</mat-toolbar>
+
+<main class="content">
+  <router-outlet />
+</main>

@@ -1,0 +1,59 @@
+<div class="hero">
+  <h1>Shop the catalog</h1>
+  <p>Discover products across the CommerceSphere marketplace.</p>
+  <mat-form-field appearance="outline" class="search">
+    <mat-icon matPrefix>search</mat-icon>
+    <mat-label>Search products</mat-label>
+    <input matInput [formControl]="search" placeholder="Try a name or keyword" />
+  </mat-form-field>
+</div>
+
+@if (loading()) {
+  <mat-progress-bar mode="indeterminate" />
+}
+
+@if (products().length === 0 && !loading()) {
+  <div class="empty">
+    <mat-icon>inventory_2</mat-icon>
+    <p>No products found.</p>
+  </div>
+}
+
+<div class="grid">
+  @for (p of products(); track p.id) {
+    <mat-card appearance="outlined" class="product">
+      <a [routerLink]="['/shop/products', p.id]" class="thumb">
+        @if (p.imageUrl) {
+          <img [src]="p.imageUrl" [alt]="p.name" />
+        } @else {
+          <div class="thumb-fallback"><mat-icon>image</mat-icon></div>
+        }
+      </a>
+      <mat-card-content>
+        <div class="cat">{{ p.category }}</div>
+        <a [routerLink]="['/shop/products', p.id]" class="name">{{ p.name }}</a>
+        <div class="price-row">
+          <span class="price">{{ p.price | currency }}</span>
+          @if (p.stock <= 0) {
+            <span class="oos">Out of stock</span>
+          }
+        </div>
+      </mat-card-content>
+      <mat-card-actions>
+        <button mat-flat-button color="primary" (click)="addToCart(p)" [disabled]="p.stock <= 0">
+          <mat-icon>add_shopping_cart</mat-icon> Add to cart
+        </button>
+      </mat-card-actions>
+    </mat-card>
+  }
+</div>
+
+@if (total() > pageSize()) {
+  <mat-paginator
+    [length]="total()"
+    [pageSize]="pageSize()"
+    [pageIndex]="pageIndex()"
+    [pageSizeOptions]="[12, 24, 48]"
+    (page)="onPage($event)"
+  />
+}
