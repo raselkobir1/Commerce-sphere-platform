@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -22,9 +22,9 @@ namespace CommerceSphere.InventoryService.Infrastructure.Migrations
                     quantity_reserved = table.Column<int>(type: "integer", nullable: false),
                     reorder_level = table.Column<int>(type: "integer", nullable: false),
                     is_active = table.Column<bool>(type: "boolean", nullable: false),
+                    xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false),
                     created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false)
+                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -41,8 +41,7 @@ namespace CommerceSphere.InventoryService.Infrastructure.Migrations
                     status = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
                     idempotency_key = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
                     created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false)
+                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -54,11 +53,11 @@ namespace CommerceSphere.InventoryService.Infrastructure.Migrations
                 columns: table => new
                 {
                     id = table.Column<Guid>(type: "uuid", nullable: false),
-                    reservation_id = table.Column<Guid>(type: "uuid", nullable: false),
                     product_id = table.Column<Guid>(type: "uuid", nullable: false),
                     sku = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     quantity = table.Column<int>(type: "integer", nullable: false),
-                    unit_price = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false)
+                    unit_price = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
+                    reservation_id = table.Column<Guid>(type: "uuid", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -89,6 +88,11 @@ namespace CommerceSphere.InventoryService.Infrastructure.Migrations
                 column: "sku");
 
             migrationBuilder.CreateIndex(
+                name: "IX_reservation_items_reservation_id",
+                table: "reservation_items",
+                column: "reservation_id");
+
+            migrationBuilder.CreateIndex(
                 name: "ix_reservations_cart_id",
                 table: "reservations",
                 column: "cart_id");
@@ -103,9 +107,14 @@ namespace CommerceSphere.InventoryService.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropTable(name: "reservation_items");
-            migrationBuilder.DropTable(name: "reservations");
-            migrationBuilder.DropTable(name: "inventory_items");
+            migrationBuilder.DropTable(
+                name: "inventory_items");
+
+            migrationBuilder.DropTable(
+                name: "reservation_items");
+
+            migrationBuilder.DropTable(
+                name: "reservations");
         }
     }
 }

@@ -23,8 +23,15 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.Property(p => p.CreatedAt).HasColumnName("created_at");
         builder.Property(p => p.UpdatedAt).HasColumnName("updated_at");
 
-        // Optimistic concurrency via xmin (PostgreSQL system column)
-        builder.UseXminAsConcurrencyToken();
+        // Optimistic concurrency via the PostgreSQL xmin system column. BaseEntity exposes an
+        // explicit `uint RowVersion` property, so map it to xmin directly. Using
+        // UseXminAsConcurrencyToken() instead leaves RowVersion mapped to a (non-existent)
+        // "RowVersion" column, so every query fails with 42703 — same bug fixed in AuthService.
+        builder.Property(p => p.RowVersion)
+            .HasColumnName("xmin")
+            .HasColumnType("xid")
+            .ValueGeneratedOnAddOrUpdate()
+            .IsConcurrencyToken();
 
         builder.HasIndex(p => p.Sku).IsUnique().HasDatabaseName("ix_products_sku");
         builder.HasIndex(p => p.Category).HasDatabaseName("ix_products_category");

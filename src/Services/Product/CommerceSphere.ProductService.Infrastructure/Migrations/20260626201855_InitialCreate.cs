@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -34,21 +34,22 @@ namespace CommerceSphere.ProductService.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateIndex(
+                name: "ix_products_category",
+                table: "products",
+                column: "category");
+
+            migrationBuilder.CreateIndex(
                 name: "ix_products_sku",
                 table: "products",
                 column: "sku",
                 unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "ix_products_category",
-                table: "products",
-                column: "category");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropTable(name: "products");
+            migrationBuilder.DropTable(
+                name: "products");
         }
     }
 }

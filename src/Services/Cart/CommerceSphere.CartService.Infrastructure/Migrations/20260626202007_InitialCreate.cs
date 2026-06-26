@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -19,9 +19,9 @@ namespace CommerceSphere.CartService.Infrastructure.Migrations
                     user_id = table.Column<Guid>(type: "uuid", nullable: false),
                     status = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
                     idempotency_key = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: true),
+                    xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false),
                     created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false)
+                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -55,9 +55,14 @@ namespace CommerceSphere.CartService.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateIndex(
-                name: "ix_carts_user_id",
-                table: "carts",
-                column: "user_id");
+                name: "ix_cart_items_cart_id",
+                table: "cart_items",
+                column: "cart_id");
+
+            migrationBuilder.CreateIndex(
+                name: "ix_cart_items_product_id",
+                table: "cart_items",
+                column: "product_id");
 
             migrationBuilder.CreateIndex(
                 name: "ix_carts_idempotency_key",
@@ -67,21 +72,19 @@ namespace CommerceSphere.CartService.Infrastructure.Migrations
                 filter: "idempotency_key IS NOT NULL");
 
             migrationBuilder.CreateIndex(
-                name: "ix_cart_items_cart_id",
-                table: "cart_items",
-                column: "cart_id");
-
-            migrationBuilder.CreateIndex(
-                name: "ix_cart_items_product_id",
-                table: "cart_items",
-                column: "product_id");
+                name: "ix_carts_user_id",
+                table: "carts",
+                column: "user_id");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropTable(name: "cart_items");
-            migrationBuilder.DropTable(name: "carts");
+            migrationBuilder.DropTable(
+                name: "cart_items");
+
+            migrationBuilder.DropTable(
+                name: "carts");
         }
     }
 }
