@@ -32,4 +32,8 @@
     <Project Path="src/Shared/CommerceSphere.Shared.Common/CommerceSphere.Shared.Common.csproj" />
     <Project Path="src/Shared/CommerceSphere.Shared.Contracts/CommerceSphere.Shared.Contracts.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CommerceSphere.AuthService.UnitTests/CommerceSphere.AuthService.UnitTests.csproj" />
+    <Project Path="tests/CommerceSphere.AuthService.IntegrationTests/CommerceSphere.AuthService.IntegrationTests.csproj" />
+  </Folder>
 </Solution>

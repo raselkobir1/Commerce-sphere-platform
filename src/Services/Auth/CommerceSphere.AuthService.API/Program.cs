@@ -111,3 +111,7 @@ app.MapControllers();
 await app.Services.MigrateAuthDbAsync();
 
 app.Run();
+
+// Exposed so the integration test project can host the real pipeline via
+// WebApplicationFactory<Program>. Top-level statements otherwise emit an internal Program.
+public partial class Program { }
