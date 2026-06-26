@@ -38,7 +38,8 @@ public class UnitOfWork(AuthDbContext db) : IUnitOfWork
 
     public void Dispose()
     {
+        // Only dispose the transaction — the DI container owns AuthDbContext (scoped lifetime)
+        // and disposes it when the request scope ends. Disposing it here causes double-dispose.
         _transaction?.Dispose();
-        db.Dispose();
     }
 }

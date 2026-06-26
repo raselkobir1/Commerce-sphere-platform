@@ -1,4 +1,5 @@
 using System.Text.Json;
+using CommerceSphere.AuthService.Application.Interfaces;
 using CommerceSphere.Shared.Common.Resilience;
 using CommerceSphere.Shared.Contracts.Events.Auth;
 using Confluent.Kafka;
@@ -6,11 +7,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace CommerceSphere.AuthService.Infrastructure.Kafka.Producers;
-
-public interface IUserEventProducer
-{
-    Task PublishUserCreatedAsync(UserCreatedEvent evt, CancellationToken ct = default);
-}
 
 // Registered as Singleton so the underlying Kafka producer (which is expensive to create
 // and maintains an internal connection pool) is shared across all requests.

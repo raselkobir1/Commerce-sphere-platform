@@ -6,6 +6,7 @@ using CommerceSphere.AuthService.Domain.Entities;
 using CommerceSphere.AuthService.Domain.Interfaces;
 using CommerceSphere.Shared.Common.Exceptions;
 using CommerceSphere.Shared.Common.Models;
+using CommerceSphere.Shared.Contracts.Events.Auth;
 using Microsoft.Extensions.Logging;
 
 namespace CommerceSphere.AuthService.Application.Managers;
@@ -13,6 +14,7 @@ namespace CommerceSphere.AuthService.Application.Managers;
 public class AuthManager(
     IUnitOfWork uow,
     IJwtService jwtService,
+    IUserEventProducer eventProducer,
     ILogger<AuthManager> logger) : IAuthManager
 {
     public async Task<AuthTokenResponse> RegisterAsync(
@@ -32,6 +34,12 @@ public class AuthManager(
         await uow.SaveChangesAsync(ct);
 
         logger.LogInformation("User registered. UserId: {UserId}, CorrelationId: {CorrelationId}", user.Id, correlationId);
+
+        // Publish after SaveChanges so the event is only sent when the user row is committed.
+        // Downstream services (Inventory) use this to sync a stock-owner record.
+        await eventProducer.PublishUserCreatedAsync(
+            new UserCreatedEvent(user.Id, user.Email, user.FirstName, user.LastName,
+                                 user.Role, DateTime.UtcNow, correlationId), ct);
 
         return BuildTokenResponse(user, refreshToken);
     }

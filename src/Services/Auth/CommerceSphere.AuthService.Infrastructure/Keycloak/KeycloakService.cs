@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using CommerceSphere.AuthService.Application.DTOs.Responses;
 using CommerceSphere.AuthService.Application.Interfaces;
+using CommerceSphere.Shared.Common.Exceptions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
@@ -61,14 +62,14 @@ public class KeycloakService(
         // --- Validate and consume state (CSRF check) ---
         var stateJson = await _redisDb.StringGetAsync(StateKey(state));
         if (stateJson.IsNullOrEmpty)
-            throw new InvalidOperationException(
-                "SSO state token is invalid or expired. The login flow must be restarted.");
+            // SsoException maps to 400 — tells the client to restart the login flow.
+            throw new SsoException("SSO state token is invalid or expired. Please restart the login flow.");
 
         // State is single-use: delete it immediately so it cannot be replayed.
         await _redisDb.KeyDeleteAsync(StateKey(state));
 
         var ssoState = JsonSerializer.Deserialize<SsoState>(stateJson!)
-            ?? throw new InvalidOperationException("Failed to deserialize SSO state from Redis.");
+            ?? throw new SsoException("Failed to read SSO state. Please restart the login flow.");
 
         // --- Exchange authorization code for Keycloak tokens ---
         // This is a server-to-server call; the code is never logged.
@@ -87,13 +88,13 @@ public class KeycloakService(
             var body = await tokenResponse.Content.ReadAsStringAsync(ct);
             logger.LogError("Keycloak token exchange failed. Status: {Status}, Body: {Body}",
                 tokenResponse.StatusCode, body);
-            throw new InvalidOperationException(
-                $"Keycloak token exchange failed with status {tokenResponse.StatusCode}.");
+            // SsoException → 400 Bad Request; the authorization code may be expired or replayed.
+            throw new SsoException("SSO login failed — the authorization code was rejected. Please try again.");
         }
 
         var keycloakTokens = await tokenResponse.Content.ReadFromJsonAsync<KeycloakTokenResponse>(
             cancellationToken: ct)
-            ?? throw new InvalidOperationException("Keycloak returned an empty token response.");
+            ?? throw new SsoException("Keycloak returned an empty token response. Please try again.");
 
         // --- Extract user identity from the id_token ---
         // The id_token is a JWT issued by Keycloak. We read claims without re-validating the signature
@@ -130,10 +131,10 @@ public class KeycloakService(
         var jwt = handler.ReadJwtToken(idToken);
 
         var sub = jwt.Subject
-            ?? throw new InvalidOperationException("id_token is missing the 'sub' claim.");
+            ?? throw new SsoException("Identity provider did not return a user ID (missing 'sub' claim).");
 
         var email = jwt.Claims.FirstOrDefault(c => c.Type == "email")?.Value
-            ?? throw new InvalidOperationException("id_token is missing the 'email' claim.");
+            ?? throw new SsoException("Identity provider did not return an email address. Ensure the 'email' scope is granted.");
 
         var firstName = jwt.Claims.FirstOrDefault(c => c.Type == "given_name")?.Value ?? string.Empty;
         var lastName  = jwt.Claims.FirstOrDefault(c => c.Type == "family_name")?.Value ?? string.Empty;

@@ -13,7 +13,8 @@ public class JwtService(IConfiguration config) : IJwtService
     private readonly string _secret = config["Jwt:Secret"] ?? throw new InvalidOperationException("Jwt:Secret not configured");
     private readonly string _issuer = config["Jwt:Issuer"] ?? "CommerceSphere";
     private readonly string _audience = config["Jwt:Audience"] ?? "CommerceSphereClients";
-    private readonly int _expiryMinutes = int.Parse(config["Jwt:ExpiryMinutes"] ?? "60");
+    // GetValue<int> is safe when the key is missing or blank; int.Parse would throw on empty string.
+    private readonly int _expiryMinutes = config.GetValue<int>("Jwt:ExpiryMinutes", 60);
 
     public string GenerateAccessToken(User user)
     {

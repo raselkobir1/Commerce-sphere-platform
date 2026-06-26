@@ -28,6 +28,10 @@ public class ConflictException(string message) : Exception(message);
 public class ConcurrencyException(string message = "The record was modified by another user. Please refresh and try again.")
     : Exception(message);
 
+// Thrown when an SSO flow step fails (invalid/expired state, bad code, Keycloak token error).
+// Maps to HTTP 400 — the client must restart the login flow from /sso/login/{provider}.
+public class SsoException(string message) : Exception(message);
+
 // Thrown when a duplicate idempotency key is detected. Maps to HTTP 409.
 // The caller already got a successful response for this key — they should use that result.
 public class IdempotencyException(string key)

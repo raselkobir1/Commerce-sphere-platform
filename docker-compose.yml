@@ -227,7 +227,7 @@ services:
       Kafka__BootstrapServers: "kafka:9092"
       Keycloak__Authority: "http://keycloak:8080/realms/commerce-sphere"
       Keycloak__ClientId: "commerce-sphere-client"
-      Keycloak__ClientSecret: "CHANGE_ME_IN_KEYCLOAK_ADMIN"
+      Keycloak__ClientSecret: "CommerceSphereDevSecret2024!"
       Keycloak__CallbackBaseUrl: "http://localhost:5000"
       Keycloak__CallbackPath: "/api/auth/sso/callback"
       Keycloak__Providers__0: "google"

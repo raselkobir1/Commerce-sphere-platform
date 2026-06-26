@@ -38,8 +38,11 @@ public class GlobalExceptionMiddleware(RequestDelegate next, ILogger<GlobalExcep
             UnauthorizedException uex => (HttpStatusCode.Unauthorized,       uex.Message,                Enumerable.Empty<string>()),
             BusinessException bex     => (HttpStatusCode.UnprocessableEntity, bex.Message,               Enumerable.Empty<string>()),
             ConflictException cex     => (HttpStatusCode.Conflict,           cex.Message,                Enumerable.Empty<string>()),
-            ConcurrencyException cex  => (HttpStatusCode.Conflict,           cex.Message,                Enumerable.Empty<string>()),
+            ConcurrencyException ccex => (HttpStatusCode.Conflict,           ccex.Message,               Enumerable.Empty<string>()),
             IdempotencyException iex  => (HttpStatusCode.Conflict,           iex.Message,                Enumerable.Empty<string>()),
+            // SSO flow errors (expired state token, bad code, Keycloak rejection) → 400 so the
+            // client knows it must restart the login flow rather than retrying the same request.
+            SsoException sex          => (HttpStatusCode.BadRequest,         sex.Message,                Enumerable.Empty<string>()),
             // Unknown exception → 500; message is hidden from the client to avoid leaking internals.
             _                         => (HttpStatusCode.InternalServerError, "An unexpected error occurred.", Enumerable.Empty<string>())
         };

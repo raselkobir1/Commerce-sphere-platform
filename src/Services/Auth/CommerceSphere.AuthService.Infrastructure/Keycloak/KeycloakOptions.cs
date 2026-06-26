@@ -26,7 +26,9 @@ public class KeycloakOptions
     // Keycloak 24.0 has built-in support for: google, github, facebook, microsoft, linkedin.
     // Twitter/X is NOT a built-in Keycloak 24 provider — add it manually as a generic OAuth2
     // provider in the Keycloak admin UI before including "twitter" here.
-    public List<string> Providers { get; set; } = ["google", "github", "facebook"];
+    // Default is empty so the list comes entirely from config — a non-empty default would merge
+    // with environment variables, duplicating every provider.
+    public List<string> Providers { get; set; } = [];
 
     // How long the SSO state token stays valid in Redis while the user completes the social login.
     // 10 minutes is generous — OAuth flows rarely take longer. Increase if users have slow networks.

@@ -21,7 +21,7 @@
       "protocol": "openid-connect",
       "publicClient": false,
       "clientAuthenticatorType": "client-secret",
-      "secret": "CHANGE_ME_IN_KEYCLOAK_ADMIN",
+      "secret": "CommerceSphereDevSecret2024!",
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
       "implicitFlowEnabled": false,

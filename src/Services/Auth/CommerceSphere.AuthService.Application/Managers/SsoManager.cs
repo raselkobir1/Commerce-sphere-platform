@@ -3,6 +3,7 @@ using CommerceSphere.AuthService.Application.Interfaces;
 using CommerceSphere.AuthService.Domain.Entities;
 using CommerceSphere.AuthService.Domain.Interfaces;
 using CommerceSphere.Shared.Common.Exceptions;
+using CommerceSphere.Shared.Contracts.Events.Auth;
 using Microsoft.Extensions.Logging;
 
 namespace CommerceSphere.AuthService.Application.Managers;
@@ -15,6 +16,7 @@ public class SsoManager(
     IUnitOfWork uow,
     IJwtService jwtService,
     IKeycloakService keycloakService,
+    IUserEventProducer eventProducer,
     ILogger<SsoManager> logger) : ISsoManager
 {
     public Task<SsoLoginUrlResponse> GetLoginUrlAsync(
@@ -48,41 +50,69 @@ public class SsoManager(
             provider, userInfo.Email, userInfo.Sub, correlationId);
 
         // --- Resolve or create local user ---
+        // Wrapped in a DB transaction to prevent a race condition where two concurrent first-time
+        // logins with the same email both see null and try to INSERT the same user row, causing
+        // a unique constraint violation on ix_users_email. The catch block handles that case.
 
-        // Step 1: look up an existing link by social identity (most common path for returning users).
-        var user = await uow.Users.GetByExternalLoginAsync(provider, userInfo.Sub, ct);
+        User? user;
+        bool isNewUser = false;
 
-        if (user is null)
+        await uow.BeginTransactionAsync(ct);
+        try
         {
-            // Step 2: try to find a locally-registered account with the same email.
-            // This handles the case where a user registered with email/password first and then
-            // tries to log in with the same email via Google — we link the accounts automatically.
-            user = await uow.Users.GetByEmailAsync(userInfo.Email, ct);
+            // Step 1: look up an existing link by social identity (most common path for returning users).
+            user = await uow.Users.GetByExternalLoginAsync(provider, userInfo.Sub, ct);
 
             if (user is null)
             {
-                // Step 3: first-ever login with this social identity — create a new local user.
-                user = User.CreateFromSso(userInfo.Email, userInfo.FirstName, userInfo.LastName);
-                await uow.Users.AddAsync(user, ct);
+                // Step 2: try to find a locally-registered account with the same email.
+                // This handles the case where a user registered with email/password first and then
+                // tries to log in with the same email via Google — we link the accounts automatically.
+                user = await uow.Users.GetByEmailAsync(userInfo.Email, ct);
 
-                // Flush to DB now so user.Id is assigned before we create the ExternalLogin FK.
-                await uow.SaveChangesAsync(ct);
+                if (user is null)
+                {
+                    // Step 3: first-ever login with this social identity — create a new local user.
+                    user = User.CreateFromSso(userInfo.Email, userInfo.FirstName, userInfo.LastName);
+                    await uow.Users.AddAsync(user, ct);
 
-                logger.LogInformation(
-                    "New SSO user created. UserId: {UserId}, Provider: {Provider}, CorrelationId: {CorrelationId}",
-                    user.Id, provider, correlationId);
+                    // Flush to DB now so user.Id is assigned before we create the ExternalLogin FK.
+                    await uow.SaveChangesAsync(ct);
+                    isNewUser = true;
+
+                    logger.LogInformation(
+                        "New SSO user created. UserId: {UserId}, Provider: {Provider}, CorrelationId: {CorrelationId}",
+                        user.Id, provider, correlationId);
+                }
+                else
+                {
+                    logger.LogInformation(
+                        "Existing local user linked to SSO. UserId: {UserId}, Provider: {Provider}, CorrelationId: {CorrelationId}",
+                        user.Id, provider, correlationId);
+                }
+
+                // Create the ExternalLogin row so future logins via the same social account
+                // are resolved directly (Step 1 path) without checking by email again.
+                var externalLogin = ExternalLogin.Create(user.Id, provider, userInfo.Sub);
+                await uow.Users.AddExternalLoginAsync(externalLogin, ct);
             }
-            else
-            {
-                logger.LogInformation(
-                    "Existing local user linked to SSO. UserId: {UserId}, Provider: {Provider}, CorrelationId: {CorrelationId}",
-                    user.Id, provider, correlationId);
-            }
 
-            // Create the ExternalLogin row so future logins via the same social account
-            // are resolved directly (Step 1 path) without checking by email again.
-            var externalLogin = ExternalLogin.Create(user.Id, provider, userInfo.Sub);
-            await uow.Users.AddExternalLoginAsync(externalLogin, ct);
+            await uow.CommitTransactionAsync(ct);
+        }
+        catch (Exception ex) when (IsUniqueConstraintViolation(ex))
+        {
+            // Two concurrent first-time logins for the same email raced — the other request won.
+            // Roll back, then fall back to the existing user.
+            await uow.RollbackTransactionAsync(ct);
+            user = await uow.Users.GetByEmailAsync(userInfo.Email, ct)
+                ?? throw new SsoException("SSO login failed due to a concurrent signup conflict. Please try again.");
+            logger.LogWarning(
+                "Concurrent SSO signup conflict resolved. Email: {Email}, Provider: {Provider}", userInfo.Email, provider);
+        }
+        catch
+        {
+            await uow.RollbackTransactionAsync(ct);
+            throw;
         }
 
         if (!user.IsActive)
@@ -99,6 +129,12 @@ public class SsoManager(
         logger.LogInformation(
             "SSO login complete. UserId: {UserId}, Provider: {Provider}, CorrelationId: {CorrelationId}",
             user.Id, provider, correlationId);
+
+        // Publish after the transaction commits so the event is only sent when the user row is durable.
+        if (isNewUser)
+            await eventProducer.PublishUserCreatedAsync(
+                new UserCreatedEvent(user.Id, user.Email, user.FirstName, user.LastName,
+                                     user.Role, DateTime.UtcNow, correlationId), ct);
 
         var tokenResponse = new AuthTokenResponse(
             AccessToken: jwtService.GenerateAccessToken(user),
@@ -127,4 +163,12 @@ public class SsoManager(
             throw new BusinessException(
                 $"Provider '{provider}' is not configured. Available: {string.Join(", ", available)}.");
     }
+
+    // Checks for a unique-constraint violation without importing EF Core (Application layer
+    // must not depend on Infrastructure). Postgres code 23505 = unique_violation.
+    private static bool IsUniqueConstraintViolation(Exception ex) =>
+        ex.GetType().Name == "DbUpdateException" &&
+        (ex.InnerException?.Message.Contains("23505") == true ||
+         ex.InnerException?.Message.Contains("unique") == true ||
+         ex.InnerException?.Message.Contains("ix_users_email") == true);
 }

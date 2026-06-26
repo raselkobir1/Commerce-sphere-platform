@@ -7,6 +7,7 @@ using CommerceSphere.AuthService.Infrastructure.Redis;
 using CommerceSphere.AuthService.Infrastructure.Services;
 using CommerceSphere.AuthService.Infrastructure.UnitOfWork;
 using CommerceSphere.Shared.Common.Idempotency;
+// IUserEventProducer lives in Application; UserEventProducer (impl) lives here in Infrastructure.
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
