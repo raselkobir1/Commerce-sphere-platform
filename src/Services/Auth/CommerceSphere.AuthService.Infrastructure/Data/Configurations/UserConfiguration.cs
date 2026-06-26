@@ -22,8 +22,13 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.UpdatedAt).HasColumnName("updated_at");
         builder.Property(u => u.LastLoginAt).HasColumnName("last_login_at");
 
-        // Optimistic concurrency via xmin (PostgreSQL system column)
-        builder.UseXminAsConcurrencyToken();
+        // Map RowVersion to PostgreSQL's built-in xmin system column for optimistic concurrency.
+        // xmin is automatically updated by Postgres on every row modification — no app-side write needed.
+        builder.Property(u => u.RowVersion)
+            .HasColumnName("xmin")
+            .HasColumnType("xid")
+            .ValueGeneratedOnAddOrUpdate()
+            .IsConcurrencyToken();
 
         builder.HasIndex(u => u.Email).IsUnique().HasDatabaseName("ix_users_email");
 

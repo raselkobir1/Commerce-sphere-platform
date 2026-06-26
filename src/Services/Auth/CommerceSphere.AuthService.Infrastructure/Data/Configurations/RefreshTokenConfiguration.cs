@@ -20,6 +20,11 @@ public class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>
         builder.Property(r => r.CreatedByIp).HasColumnName("created_by_ip").HasMaxLength(45);
         builder.Property(r => r.CreatedAt).HasColumnName("created_at");
         builder.Property(r => r.UpdatedAt).HasColumnName("updated_at");
+        builder.Property(r => r.RowVersion)
+            .HasColumnName("xmin")
+            .HasColumnType("xid")
+            .ValueGeneratedOnAddOrUpdate()
+            .IsConcurrencyToken();
 
         builder.HasIndex(r => r.Token).IsUnique().HasDatabaseName("ix_refresh_tokens_token");
         builder.HasIndex(r => r.UserId).HasDatabaseName("ix_refresh_tokens_user_id");
