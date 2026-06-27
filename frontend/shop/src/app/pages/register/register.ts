@@ -8,7 +8,7 @@ import { Auth } from '../../core/auth';
   imports: [FormsModule, RouterLink],
   template: `
     <div class="container auth-wrap">
-      <div class="card">
+      <div class="panel">
         <h1>Create account</h1>
         <form (ngSubmit)="submit()">
           <div class="field">

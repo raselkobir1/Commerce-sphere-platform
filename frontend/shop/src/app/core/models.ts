@@ -16,7 +16,7 @@ export interface Product {
   description: string;
   sku: string;
   price: number;
-  category: string;
+  category: string; // holds the sub-category name (see data/taxonomy.ts)
   imageUrl?: string | null;
   isActive: boolean;
   stock: number;
@@ -41,4 +41,23 @@ export interface Cart {
 // Backend paginated list envelope (the shop only reads the items).
 export interface Paged<T> {
   items: T[];
+}
+
+// Shipping address collected at checkout (frontend-only — the backend checkout takes no address).
+export interface ShippingAddress {
+  fullName: string;
+  phone: string;
+  line1: string;
+  city: string;
+  postcode: string;
+}
+
+// A placed order, kept in memory to render the confirmation page.
+export interface PlacedOrder {
+  reference: string;
+  items: CartItem[];
+  total: number;
+  address: ShippingAddress;
+  paymentMethod: 'COD';
+  placedAt: Date;
 }

@@ -9,7 +9,7 @@ import { Cart } from '../../core/cart';
   imports: [FormsModule, RouterLink],
   template: `
     <div class="container auth-wrap">
-      <div class="card">
+      <div class="panel">
         <h1>Sign in</h1>
         <form (ngSubmit)="submit()">
           <div class="field">
