@@ -80,6 +80,20 @@ public class User : BaseEntity
         SetUpdated();
     }
 
+    // Admin user-management: change the user's role (must be an existing Role.Name) and active state.
+    public void ChangeRole(string role)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(role);
+        Role = role.Trim();
+        SetUpdated();
+    }
+
+    public void SetActive(bool active)
+    {
+        IsActive = active;
+        SetUpdated();
+    }
+
     public void UpdateProfile(string firstName, string lastName)
     {
         FirstName = firstName;

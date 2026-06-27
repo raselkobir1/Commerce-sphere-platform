@@ -170,6 +170,52 @@ public class AuthManager(
         return MapToResponse(user);
     }
 
+    // ── Admin user management ────────────────────────────────────────────────
+    public async Task<UserResponse> AdminCreateUserAsync(
+        AdminCreateUserRequest request, string correlationId, CancellationToken ct = default)
+    {
+        if (await uow.Users.ExistsByEmailAsync(request.Email, ct))
+            throw new ConflictException($"Email '{request.Email}' is already registered.");
+
+        var role = await uow.Roles.GetByNameAsync(request.Role, ct)
+            ?? throw new BusinessException($"Role '{request.Role}' does not exist.");
+
+        var user = User.Create(request.Email, BC.HashPassword(request.Password), request.FirstName, request.LastName, role.Name);
+        user.MarkEmailVerified(); // admin-created accounts are trusted/pre-verified
+        await uow.Users.AddAsync(user, ct);
+        await uow.SaveChangesAsync(ct);
+
+        await eventProducer.PublishUserCreatedAsync(
+            new UserCreatedEvent(user.Id, user.Email, user.FirstName, user.LastName, user.Role, DateTime.UtcNow, correlationId), ct);
+
+        logger.LogInformation("Admin created user {UserId} with role {Role}", user.Id, user.Role);
+        return MapToResponse(user);
+    }
+
+    public async Task<UserResponse> AdminUpdateUserAsync(Guid id, AdminUpdateUserRequest request, CancellationToken ct = default)
+    {
+        var user = await uow.Users.GetByIdAsync(id, ct) ?? throw new NotFoundException(nameof(User), id);
+
+        _ = await uow.Roles.GetByNameAsync(request.Role, ct)
+            ?? throw new BusinessException($"Role '{request.Role}' does not exist.");
+
+        user.ChangeRole(request.Role);
+        user.SetActive(request.IsActive);
+        uow.Users.Update(user);
+        await uow.SaveChangesAsync(ct);
+
+        logger.LogInformation("Admin updated user {UserId} → role {Role}, active {Active}", id, request.Role, request.IsActive);
+        return MapToResponse(user);
+    }
+
+    public async Task AdminDeleteUserAsync(Guid id, CancellationToken ct = default)
+    {
+        var user = await uow.Users.GetByIdAsync(id, ct) ?? throw new NotFoundException(nameof(User), id);
+        uow.Users.Remove(user); // refresh tokens cascade
+        await uow.SaveChangesAsync(ct);
+        logger.LogInformation("Admin deleted user {UserId}", id);
+    }
+
     private async Task<LoginResult> CompleteLoginAsync(User user, string ipAddress, CancellationToken ct)
     {
         user.RecordLogin();

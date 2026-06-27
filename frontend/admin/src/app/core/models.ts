@@ -48,6 +48,40 @@ export interface Product {
   stock: number;
 }
 
+export interface Role {
+  id: string;
+  name: string;
+  description: string;
+  isSystem: boolean;
+  isDefault: boolean;
+  createdAt: string;
+}
+
+export interface Menu {
+  id: string;
+  key: string;
+  label: string;
+  route: string;
+  icon: string;
+  sortOrder: number;
+  parentId?: string | null;
+}
+
+// A menu + the signed-in role's CRUD flags for it (from /api/auth/me/permissions and the matrix).
+export interface MenuPermission {
+  menuId: string;
+  menuKey: string;
+  label: string;
+  route: string;
+  icon: string;
+  sortOrder: number;
+  parentId?: string | null;
+  canView: boolean;
+  canCreate: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+}
+
 export interface Category {
   id: string;
   name: string;

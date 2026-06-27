@@ -2,6 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Auth } from '../../core/auth';
+import { Perms } from '../../core/perms';
 
 @Component({
   selector: 'app-login',
@@ -46,6 +47,7 @@ import { Auth } from '../../core/auth';
 })
 export class LoginPage {
   private auth = inject(Auth);
+  private perms = inject(Perms);
   private router = inject(Router);
 
   email = '';
@@ -57,14 +59,24 @@ export class LoginPage {
     this.error.set('');
     this.loading.set(true);
     this.auth.login(this.email, this.password).subscribe({
-      next: (user) => {
-        this.loading.set(false);
-        if (user.role !== 'Admin') {
-          this.auth.logout();
-          this.error.set('This account is not an administrator.');
-          return;
-        }
-        this.router.navigate(['/dashboard']);
+      next: () => {
+        // Load the user's permitted menus; if they have none, they have no admin access.
+        this.perms.load().subscribe({
+          next: (menus) => {
+            this.loading.set(false);
+            if (menus.length === 0) {
+              this.auth.logout();
+              this.perms.clear();
+              this.error.set('This account has no admin access.');
+              return;
+            }
+            this.router.navigate([menus[0].route]);
+          },
+          error: () => {
+            this.loading.set(false);
+            this.error.set('Could not load your permissions.');
+          },
+        });
       },
       error: (err) => {
         this.loading.set(false);

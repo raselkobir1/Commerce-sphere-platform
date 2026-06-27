@@ -13,6 +13,7 @@ export class Auth {
   // The current user (null when signed out). Components read this reactively.
   user = signal<User | null>(null);
   isAdmin = computed(() => this.user()?.role === 'Admin');
+  isAuthenticated = computed(() => this.user() !== null);
 
   get token(): string | null {
     return localStorage.getItem(TOKEN_KEY);

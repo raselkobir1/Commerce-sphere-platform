@@ -59,6 +59,8 @@ svg { display: block; }
 .nav { padding: 0 12px; display: flex; flex-direction: column; gap: 2px; }
 .nav a { display: flex; align-items: center; gap: 12px; color: var(--sidebar-ink); padding: 11px 14px; border-radius: 10px; font-weight: 500; transition: .12s; }
 .nav a svg { width: 19px; height: 19px; opacity: .9; }
+.nav-emoji { width: 20px; text-align: center; font-size: 16px; }
+.nav a.nav-sub { padding-left: 30px; font-size: 13px; opacity: .92; }
 .nav a:hover { background: var(--sidebar-2); color: #fff; }
 .nav a.active { background: linear-gradient(135deg, var(--brand), var(--brand-2)); color: #fff; box-shadow: 0 6px 16px rgba(79,70,229,.35); }
 .nav a.active svg { opacity: 1; }

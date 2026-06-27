@@ -94,6 +94,37 @@ public class AuthController(IAuthManager authManager) : ControllerBase
         return Ok(ApiResponse<object>.Ok(result, "Users retrieved", HttpContext.TraceIdentifier, HttpContext.GetCorrelationId()));
     }
 
+    [HttpPost("users")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> CreateUser([FromBody] AdminCreateUserRequest request, CancellationToken ct)
+    {
+        var correlationId = HttpContext.GetCorrelationId();
+        var result = await authManager.AdminCreateUserAsync(request, correlationId, ct);
+        return Ok(ApiResponse<object>.Ok(result, "User created", HttpContext.TraceIdentifier, correlationId));
+    }
+
+    [HttpPut("users/{id:guid}")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdateUser(Guid id, [FromBody] AdminUpdateUserRequest request, CancellationToken ct)
+    {
+        var result = await authManager.AdminUpdateUserAsync(id, request, ct);
+        return Ok(ApiResponse<object>.Ok(result, "User updated", HttpContext.TraceIdentifier, HttpContext.GetCorrelationId()));
+    }
+
+    [HttpDelete("users/{id:guid}")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> DeleteUser(Guid id, CancellationToken ct)
+    {
+        if (id == GetUserId())
+            return BadRequest(ApiResponse.Fail("You cannot delete your own account."));
+        await authManager.AdminDeleteUserAsync(id, ct);
+        return Ok(ApiResponse.Ok("User deleted", HttpContext.TraceIdentifier, HttpContext.GetCorrelationId()));
+    }
+
     private Guid GetUserId() =>
         Guid.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
             ?? User.FindFirst("sub")?.Value ?? throw new UnauthorizedAccessException());

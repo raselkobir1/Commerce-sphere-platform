@@ -12,11 +12,19 @@ public class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbContext(
     // SSO-linked identities — each row links a local User to a social provider account.
     public DbSet<ExternalLogin> ExternalLogins => Set<ExternalLogin>();
 
+    // RBAC
+    public DbSet<Role> Roles => Set<Role>();
+    public DbSet<Menu> Menus => Set<Menu>();
+    public DbSet<RoleMenuPermission> RolePermissions => Set<RoleMenuPermission>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfiguration(new UserConfiguration());
         modelBuilder.ApplyConfiguration(new RefreshTokenConfiguration());
         modelBuilder.ApplyConfiguration(new ExternalLoginConfiguration());
+        modelBuilder.ApplyConfiguration(new RoleConfiguration());
+        modelBuilder.ApplyConfiguration(new MenuConfiguration());
+        modelBuilder.ApplyConfiguration(new RoleMenuPermissionConfiguration());
         base.OnModelCreating(modelBuilder);
     }
 }

@@ -12,4 +12,9 @@ public interface IAuthManager
     Task RevokeTokenAsync(RevokeTokenRequest request, CancellationToken ct = default);
     Task<PagedResult<UserResponse>> GetUsersAsync(PagedRequest paged, CancellationToken ct = default);
     Task<UserResponse> GetUserByIdAsync(Guid id, CancellationToken ct = default);
+
+    // Admin user management
+    Task<UserResponse> AdminCreateUserAsync(AdminCreateUserRequest request, string correlationId, CancellationToken ct = default);
+    Task<UserResponse> AdminUpdateUserAsync(Guid id, AdminUpdateUserRequest request, CancellationToken ct = default);
+    Task AdminDeleteUserAsync(Guid id, CancellationToken ct = default);
 }

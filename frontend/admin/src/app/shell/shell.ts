@@ -1,6 +1,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { Auth } from '../core/auth';
+import { Perms } from '../core/perms';
 import { Theme } from '../core/theme';
 
 // The signed-in layout: icon sidebar + top bar (with the user/appearance menu) + the page.
@@ -14,34 +15,16 @@ import { Theme } from '../core/theme';
 
         <div class="nav-label">Menu</div>
         <nav class="nav">
-          <a routerLink="/dashboard" routerLinkActive="active">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
-            Dashboard
-          </a>
-          <a routerLink="/products" routerLinkActive="active">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 7 12 3 4 7v10l8 4 8-4z"/><path d="m4 7 8 4 8-4M12 11v10"/></svg>
-            Products
-          </a>
-          <a routerLink="/categories" routerLinkActive="active">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
-            Categories
-          </a>
-          <a routerLink="/inventory" routerLinkActive="active">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>
-            Inventory
-          </a>
-          <a routerLink="/users" routerLinkActive="active">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13A4 4 0 0 1 16 11"/></svg>
-            Users
-          </a>
-        </nav>
-
-        <div class="nav-label">Account</div>
-        <nav class="nav">
-          <a routerLink="/settings" routerLinkActive="active">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
-            Settings
-          </a>
+          @for (m of menuTree(); track m.menuKey) {
+            <a [routerLink]="m.route" routerLinkActive="active">
+              <span class="nav-emoji">{{ m.icon }}</span> {{ m.label }}
+            </a>
+            @for (c of m.children; track c.menuKey) {
+              <a class="nav-sub" [routerLink]="c.route" routerLinkActive="active">
+                <span class="nav-emoji">{{ c.icon }}</span> {{ c.label }}
+              </a>
+            }
+          }
         </nav>
 
         <div class="sidebar-foot">
@@ -122,10 +105,20 @@ import { Theme } from '../core/theme';
 })
 export class Shell {
   auth = inject(Auth);
+  perms = inject(Perms);
   theme = inject(Theme);
   private router = inject(Router);
 
   menuOpen = signal(false);
+
+  // Build the 2-level menu tree from the user's viewable menus (ordered by sortOrder).
+  menuTree = computed(() => {
+    const all = this.perms.menus();
+    const ids = new Set(all.map((m) => m.menuId));
+    const order = (a: { sortOrder: number }, b: { sortOrder: number }) => a.sortOrder - b.sortOrder;
+    const tops = all.filter((m) => !m.parentId || !ids.has(m.parentId)).sort(order);
+    return tops.map((t) => ({ ...t, children: all.filter((c) => c.parentId === t.menuId).sort(order) }));
+  });
 
   initials = computed(() => {
     const u = this.auth.user();
@@ -135,6 +128,7 @@ export class Shell {
   logout(): void {
     this.menuOpen.set(false);
     this.auth.logout();
+    this.perms.clear();
     this.router.navigate(['/login']);
   }
 }

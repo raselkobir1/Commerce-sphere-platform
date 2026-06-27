@@ -9,6 +9,8 @@ public interface IUserRepository
     Task<bool> ExistsByEmailAsync(string email, CancellationToken ct = default);
     Task AddAsync(User user, CancellationToken ct = default);
     void Update(User user);
+    void Remove(User user);
+    Task<int> CountByRoleAsync(string role, CancellationToken ct = default);
     Task<(IEnumerable<User> Users, int TotalCount)> GetPagedAsync(int pageNumber, int pageSize, CancellationToken ct = default);
     Task<User?> GetByExternalLoginAsync(string provider, string externalUserId, CancellationToken ct = default);
     Task AddExternalLoginAsync(ExternalLogin login, CancellationToken ct = default);

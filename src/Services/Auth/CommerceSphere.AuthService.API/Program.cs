@@ -60,6 +60,7 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<IAuthManager, AuthManager>();
 builder.Services.AddScoped<AuthManager>();  // concrete type needed by TwoFactorManager + OtpManager
 builder.Services.AddScoped<IAccountManager, AccountManager>();
+builder.Services.AddScoped<IRbacManager, RbacManager>();
 builder.Services.AddScoped<ITwoFactorManager, TwoFactorManager>();
 builder.Services.AddScoped<IOtpManager, OtpManager>();
 
@@ -112,6 +113,7 @@ app.MapControllers();
 // Apply pending EF Core migrations automatically on startup so Docker containers
 // are always in sync with the latest schema without a manual migration step.
 await app.Services.MigrateAuthDbAsync();
+await app.Services.SeedRbacAsync();
 
 app.Run();
 

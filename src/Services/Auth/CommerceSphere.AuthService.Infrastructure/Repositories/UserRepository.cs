@@ -23,6 +23,12 @@ public class UserRepository(AuthDbContext db) : IUserRepository
     public void Update(User user) =>
         db.Users.Update(user);
 
+    public void Remove(User user) =>
+        db.Users.Remove(user);
+
+    public Task<int> CountByRoleAsync(string role, CancellationToken ct = default) =>
+        db.Users.CountAsync(u => u.Role == role, ct);
+
     public async Task<(IEnumerable<User> Users, int TotalCount)> GetPagedAsync(
         int pageNumber, int pageSize, CancellationToken ct = default)
     {

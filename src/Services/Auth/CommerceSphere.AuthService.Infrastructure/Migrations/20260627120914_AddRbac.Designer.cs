@@ -3,6 +3,7 @@ using System;
 using CommerceSphere.AuthService.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CommerceSphere.AuthService.Infrastructure.Migrations
 {
     [DbContext(typeof(AuthDbContext))]
-    partial class AuthDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260627120914_AddRbac")]
+    partial class AddRbac
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -89,10 +92,6 @@ namespace CommerceSphere.AuthService.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("label");
 
-                    b.Property<Guid?>("ParentId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("parent_id");
-
                     b.Property<string>("Route")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -115,9 +114,6 @@ namespace CommerceSphere.AuthService.Infrastructure.Migrations
                     b.HasIndex("Key")
                         .IsUnique()
                         .HasDatabaseName("ix_menus_key");
-
-                    b.HasIndex("ParentId")
-                        .HasDatabaseName("ix_menus_parent");
 
                     b.ToTable("menus", (string)null);
                 });
