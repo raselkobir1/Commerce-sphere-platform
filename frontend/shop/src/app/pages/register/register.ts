@@ -2,10 +2,11 @@ import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { Auth } from '../../core/auth';
+import { SsoButtons } from '../../layout/sso-buttons';
 
 @Component({
   selector: 'app-register',
-  imports: [FormsModule, RouterLink],
+  imports: [FormsModule, RouterLink, SsoButtons],
   template: `
     <div class="container auth-wrap">
       <div class="panel">
@@ -36,6 +37,9 @@ import { Auth } from '../../core/auth';
             {{ loading() ? 'Creating…' : 'Create account' }}
           </button>
         </form>
+
+        <app-sso-buttons />
+
         <p class="muted" style="margin-top:16px">
           Already have an account? <a routerLink="/login">Sign in</a>
         </p>

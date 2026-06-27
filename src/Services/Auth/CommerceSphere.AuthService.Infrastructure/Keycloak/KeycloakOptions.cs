@@ -4,9 +4,18 @@ namespace CommerceSphere.AuthService.Infrastructure.Keycloak;
 // All Keycloak communication settings live here — change them without touching code.
 public class KeycloakOptions
 {
-    // Base URL of the Keycloak realm, e.g. "http://keycloak:8080/realms/commerce-sphere".
-    // In Docker: uses internal DNS name "keycloak". For local dev: "http://localhost:8080/realms/...".
+    // Base URL of the Keycloak realm for SERVER-TO-SERVER calls (token exchange).
+    // In Docker this uses the internal DNS name, e.g. "http://keycloak:8080/realms/commerce-sphere".
     public string Authority { get; set; } = string.Empty;
+
+    // BROWSER-FACING base URL of the Keycloak realm. The authorization step runs in the user's
+    // browser, which cannot resolve the Docker-internal "keycloak" host — so this must be a
+    // host-reachable URL, e.g. "http://localhost:8080/realms/commerce-sphere". Falls back to
+    // Authority when not set (fine for fully local, non-Docker runs).
+    public string PublicAuthority { get; set; } = string.Empty;
+
+    private string EffectivePublicAuthority =>
+        string.IsNullOrWhiteSpace(PublicAuthority) ? Authority : PublicAuthority;
 
     // The Keycloak client ID registered under the realm.
     public string ClientId { get; set; } = string.Empty;
@@ -54,9 +63,10 @@ public class KeycloakOptions
     // Full redirect URI sent to Keycloak and registered as an allowed redirect in the Keycloak client.
     public string CallbackUri => $"{CallbackBaseUrl.TrimEnd('/')}{CallbackPath}";
 
-    // OIDC standard endpoints derived from the authority.
+    // OIDC standard endpoints. The token exchange is server-to-server (internal Authority); the
+    // authorization endpoint is where the BROWSER is sent, so it uses the public authority.
     public string TokenEndpoint => $"{Authority}/protocol/openid-connect/token";
-    public string AuthorizationEndpoint => $"{Authority}/protocol/openid-connect/auth";
+    public string AuthorizationEndpoint => $"{EffectivePublicAuthority}/protocol/openid-connect/auth";
 
     // Fail fast at startup if required values are missing rather than confusing errors at login time.
     public void Validate()

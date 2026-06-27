@@ -167,6 +167,13 @@ img { max-width: 100%; display: block; }
 /* auth */
 .auth-wrap { max-width: 420px; margin: 50px auto; }
 
+/* SSO buttons */
+.sso-divider { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 13px; margin: 20px 0 16px; }
+.sso-divider::before, .sso-divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.sso-grid { display: flex; flex-direction: column; gap: 10px; }
+.sso-btn { justify-content: center; }
+.sso-ico { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--ink); color: #fff; font-weight: 800; font-size: 13px; }
+
 /* toast */
 .toast-stack { position: fixed; right: 20px; bottom: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 100; }
 .toast { background: var(--ink); color: #fff; padding: 12px 18px; border-radius: 10px; box-shadow: var(--shadow); font-weight: 600; animation: pop .18s ease; }

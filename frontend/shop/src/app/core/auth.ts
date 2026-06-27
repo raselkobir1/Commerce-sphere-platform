@@ -50,6 +50,13 @@ export class Auth {
     );
   }
 
+  // Finish a social login: store the access token returned on the SSO callback URL, then load
+  // the user from /me (the callback only carries tokens, not the user object).
+  completeSsoLogin(accessToken: string): Observable<User | null> {
+    localStorage.setItem(TOKEN_KEY, accessToken);
+    return this.restore();
+  }
+
   logout(): void {
     localStorage.removeItem(TOKEN_KEY);
     this.user.set(null);

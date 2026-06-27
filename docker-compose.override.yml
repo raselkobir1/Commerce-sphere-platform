@@ -31,13 +31,15 @@ services:
       Jwt__ExpiryMinutes: "${JWT_EXPIRY_MINUTES:-60}"
       Kafka__BootstrapServers: "kafka:9092"
       Keycloak__Authority: "http://keycloak:8080/realms/commerce-sphere"
+      # Browser-facing realm URL: the social-login redirect happens in the user's browser, which
+      # cannot resolve the internal "keycloak" host — it must use the host-published localhost:8080.
+      Keycloak__PublicAuthority: "http://localhost:8080/realms/commerce-sphere"
       Keycloak__ClientId: "commerce-sphere-client"
       Keycloak__ClientSecret: "${KEYCLOAK_CLIENT_SECRET}"
       Keycloak__CallbackBaseUrl: "http://localhost:5000"
       Keycloak__CallbackPath: "/api/auth/sso/callback"
       Keycloak__Providers__0: "google"
-      Keycloak__Providers__1: "github"
-      Keycloak__Providers__2: "facebook"
+      Keycloak__Providers__1: "facebook"
       # SSO tokens may only be redirected back to these frontend origins (open-redirect guard).
       Keycloak__AllowedRedirectUris__0: "http://localhost:4200"
       Keycloak__AllowedRedirectUris__1: "http://localhost:4300"

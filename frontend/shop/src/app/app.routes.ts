@@ -7,6 +7,7 @@ import { CheckoutPage } from './pages/checkout/checkout';
 import { OrderSuccessPage } from './pages/order-success/order-success';
 import { LoginPage } from './pages/login/login';
 import { RegisterPage } from './pages/register/register';
+import { SsoCallbackPage } from './pages/sso-callback/sso-callback';
 
 export const routes: Routes = [
   { path: '', component: CatalogPage },
@@ -16,5 +17,6 @@ export const routes: Routes = [
   { path: 'order-success', component: OrderSuccessPage },
   { path: 'login', component: LoginPage },
   { path: 'register', component: RegisterPage },
+  { path: 'sso-callback', component: SsoCallbackPage },
   { path: '**', redirectTo: '' },
 ];

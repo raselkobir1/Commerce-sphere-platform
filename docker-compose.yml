@@ -231,8 +231,7 @@ services:
       Keycloak__CallbackBaseUrl: "http://localhost:5000"
       Keycloak__CallbackPath: "/api/auth/sso/callback"
       Keycloak__Providers__0: "google"
-      Keycloak__Providers__1: "github"
-      Keycloak__Providers__2: "facebook"
+      Keycloak__Providers__1: "facebook"
     depends_on:
       postgres-auth:
         condition: service_healthy

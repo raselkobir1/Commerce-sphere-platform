@@ -3,10 +3,11 @@ import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { Auth } from '../../core/auth';
 import { Cart } from '../../core/cart';
+import { SsoButtons } from '../../layout/sso-buttons';
 
 @Component({
   selector: 'app-login',
-  imports: [FormsModule, RouterLink],
+  imports: [FormsModule, RouterLink, SsoButtons],
   template: `
     <div class="container auth-wrap">
       <div class="panel">
@@ -29,6 +30,9 @@ import { Cart } from '../../core/cart';
             {{ loading() ? 'Signing in…' : 'Sign in' }}
           </button>
         </form>
+
+        <app-sso-buttons />
+
         <p class="muted" style="margin-top:16px">
           New here? <a routerLink="/register">Create an account</a>
         </p>
