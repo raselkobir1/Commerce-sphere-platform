@@ -81,4 +81,14 @@ public class Product : BaseEntity
         Stock = stock;
         SetUpdated();
     }
+
+    // Reduce catalog stock when units are sold (clamped at zero).
+    public void DecreaseStock(int qty)
+    {
+        if (qty <= 0)
+            throw new ArgumentException("Quantity must be positive.", nameof(qty));
+
+        Stock = Math.Max(0, Stock - qty);
+        SetUpdated();
+    }
 }

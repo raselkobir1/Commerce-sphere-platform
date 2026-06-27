@@ -3,6 +3,7 @@ import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/rou
 import { Auth } from '../core/auth';
 import { Perms } from '../core/perms';
 import { Theme } from '../core/theme';
+import { MenuPermission } from '../core/models';
 
 // The signed-in layout: icon sidebar + top bar (with the user/appearance menu) + the page.
 @Component({
@@ -15,15 +16,13 @@ import { Theme } from '../core/theme';
 
         <div class="nav-label">Menu</div>
         <nav class="nav">
-          @for (m of menuTree(); track m.menuKey) {
-            <a [routerLink]="m.route" routerLinkActive="active">
-              <span class="nav-emoji">{{ m.icon }}</span> {{ m.label }}
+          @for (m of visibleMenu(); track m.menuKey) {
+            <a [routerLink]="m.route" routerLinkActive="active" [style.padding-left.px]="14 + m.level * 16"
+               (click)="m.hasChildren && toggle(m.menuId)">
+              <span class="nav-emoji">{{ m.icon }}</span>
+              <span class="nav-text">{{ m.label }}</span>
+              @if (m.hasChildren) { <span class="chev" [class.open]="m.open">▸</span> }
             </a>
-            @for (c of m.children; track c.menuKey) {
-              <a class="nav-sub" [routerLink]="c.route" routerLinkActive="active">
-                <span class="nav-emoji">{{ c.icon }}</span> {{ c.label }}
-              </a>
-            }
           }
         </nav>
 
@@ -111,13 +110,33 @@ export class Shell {
 
   menuOpen = signal(false);
 
-  // Build the 2-level menu tree from the user's viewable menus (ordered by sortOrder).
-  menuTree = computed(() => {
+  // Which parent menus are expanded. Empty by default → sub-menus are collapsed until clicked.
+  expanded = signal<Set<string>>(new Set());
+
+  toggle(id: string): void {
+    const next = new Set(this.expanded());
+    next.has(id) ? next.delete(id) : next.add(id);
+    this.expanded.set(next);
+  }
+
+  // Visible sidebar rows: roots are always shown; a parent's children appear only while that
+  // parent is expanded (any depth). Each row carries its indentation level + open/has-children flags.
+  visibleMenu = computed(() => {
     const all = this.perms.menus();
     const ids = new Set(all.map((m) => m.menuId));
-    const order = (a: { sortOrder: number }, b: { sortOrder: number }) => a.sortOrder - b.sortOrder;
-    const tops = all.filter((m) => !m.parentId || !ids.has(m.parentId)).sort(order);
-    return tops.map((t) => ({ ...t, children: all.filter((c) => c.parentId === t.menuId).sort(order) }));
+    const exp = this.expanded();
+    const order = (a: MenuPermission, b: MenuPermission) => a.sortOrder - b.sortOrder;
+    const childrenOf = (id: string) => all.filter((c) => c.parentId === id).sort(order);
+
+    const out: (MenuPermission & { level: number; hasChildren: boolean; open: boolean })[] = [];
+    const walk = (m: MenuPermission, level: number) => {
+      const kids = childrenOf(m.menuId);
+      const open = exp.has(m.menuId);
+      out.push({ ...m, level, hasChildren: kids.length > 0, open });
+      if (open) kids.forEach((c) => walk(c, level + 1));
+    };
+    all.filter((m) => !m.parentId || !ids.has(m.parentId)).sort(order).forEach((r) => walk(r, 0));
+    return out;
   });
 
   initials = computed(() => {

@@ -8,7 +8,6 @@ import { Products } from '../../core/products';
 import { Toast } from '../../core/toast';
 import { Product } from '../../core/models';
 import { BdtPipe } from '../../core/bdt.pipe';
-import { parentOf } from '../../data/taxonomy';
 import { ratingFor, reviewsFor, stars } from '../../data/display';
 
 @Component({
@@ -19,7 +18,6 @@ import { ratingFor, reviewsFor, stars } from '../../data/display';
       @if (product(); as p) {
         <nav class="crumbs">
           <a routerLink="/">Home</a> ›
-          @if (parent(p.category)) { <a routerLink="/">{{ parent(p.category) }}</a> › }
           <a routerLink="/">{{ p.category }}</a> ›
           <span>{{ p.name }}</span>
         </nav>
@@ -114,7 +112,6 @@ export class ProductDetailPage implements OnInit {
     this.api.get<Product>(`/api/products/${this.id()}`).subscribe((p) => this.product.set(p));
   }
 
-  parent(cat: string): string | null { return parentOf(cat); }
   stars(id: string): string { return stars(ratingFor(id)); }
   rating(id: string): number { return ratingFor(id); }
   reviews(id: string): number { return reviewsFor(id); }

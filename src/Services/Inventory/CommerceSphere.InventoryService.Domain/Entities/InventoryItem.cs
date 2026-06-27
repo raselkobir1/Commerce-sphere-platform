@@ -61,6 +61,18 @@ public class InventoryItem : BaseEntity
         SetUpdated();
     }
 
+    // A completed sale: physically removes stock on hand (and frees any matching reservation).
+    // Clamped at zero so a replayed checkout event can never drive stock negative.
+    public void Sell(int qty)
+    {
+        if (qty <= 0)
+            throw new BusinessException("Sell quantity must be greater than zero.");
+
+        QuantityOnHand = Math.Max(0, QuantityOnHand - qty);
+        QuantityReserved = Math.Max(0, QuantityReserved - qty);
+        SetUpdated();
+    }
+
     public void ReceiveStock(int qty)
     {
         if (qty <= 0)

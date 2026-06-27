@@ -25,6 +25,9 @@ public static class InfrastructureExtensions
         services.AddScoped<IProductCacheService, ProductCacheService>();
         services.AddSingleton<IProductEventProducer, ProductEventProducer>();
 
+        // Keep catalog Stock in sync when carts check out.
+        services.AddHostedService<Kafka.Consumers.CartCheckedOutConsumer>();
+
         return services;
     }
 

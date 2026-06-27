@@ -127,6 +127,12 @@ public class CartManager(
         return MapToResponse(cart);
     }
 
+    public async Task<IReadOnlyList<CartResponse>> GetOrdersAsync(CancellationToken ct = default)
+    {
+        var orders = await uow.Carts.GetOrdersAsync(ct);
+        return orders.Select(MapToResponse).ToList();
+    }
+
     public async Task<CartResponse> CheckoutAsync(CheckoutCartRequest request, string correlationId, CancellationToken ct = default)
     {
         var cart = await uow.Carts.GetByIdAsync(request.CartId, ct)

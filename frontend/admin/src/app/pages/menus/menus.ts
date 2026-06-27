@@ -47,7 +47,7 @@ import { Menu } from '../../core/models';
             @for (m of ordered(); track m.id) {
               <tr>
                 <td>{{ m.sortOrder }}</td>
-                <td class="cell-main" [style.padding-left.px]="m.level ? 36 : 20">
+                <td class="cell-main" [style.padding-left.px]="20 + m.level * 24">
                   @if (m.level) { <span class="muted" style="margin-right:4px">↳</span> }
                   <span class="nav-emoji" style="margin-right:6px">{{ m.icon }}</span>{{ m.label }}
                 </td>
@@ -70,27 +70,41 @@ export class MenusPage implements OnInit {
   perms = inject(Perms);
 
   menus = signal<Menu[]>([]);
+  editingId = signal<string | null>(null);
   form: { id?: string; key: string; label: string; route: string; icon: string; sortOrder: number; parentId: string | null } = this.blank();
   saving = signal(false);
   err = signal('');
 
   private blank() { return { key: '', label: '', route: '', icon: '', sortOrder: 0, parentId: null as string | null }; }
 
-  // Only top-level menus can be parents; can't parent a menu to itself.
-  parentOptions = computed(() => this.menus().filter((m) => !m.parentId && m.id !== this.form.id));
+  // Any menu can be a parent (unlimited depth) — except the menu being edited and its own
+  // descendants (which would create a cycle).
+  parentOptions = computed(() => {
+    const all = this.menus();
+    const selfId = this.editingId();
+    const blocked = selfId ? this.descendantIds(selfId, all) : new Set<string>();
+    return all.filter((m) => m.id !== selfId && !blocked.has(m.id));
+  });
 
-  // Flattened, ordered list: each top-level menu followed by its children (level=1) for indentation.
+  // Flattened depth-first list with an indentation level per row (handles any nesting depth).
   ordered = computed(() => {
     const all = this.menus();
-    const order = (a: Menu, b: Menu) => a.sortOrder - b.sortOrder;
-    const tops = all.filter((m) => !m.parentId).sort(order);
+    const order = (a: Menu, b: Menu) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label);
+    const childrenOf = (pid: string | null) => all.filter((m) => (m.parentId ?? null) === pid).sort(order);
     const out: (Menu & { level: number })[] = [];
-    for (const t of tops) {
-      out.push({ ...t, level: 0 });
-      all.filter((c) => c.parentId === t.id).sort(order).forEach((c) => out.push({ ...c, level: 1 }));
-    }
+    const walk = (m: Menu, level: number) => { out.push({ ...m, level }); childrenOf(m.id).forEach((c) => walk(c, level + 1)); };
+    childrenOf(null).forEach((r) => walk(r, 0));
+    const placed = new Set(out.map((o) => o.id));
+    all.filter((m) => !placed.has(m.id)).forEach((m) => out.push({ ...m, level: 0 })); // orphans
     return out;
   });
+
+  private descendantIds(id: string, all: Menu[]): Set<string> {
+    const set = new Set<string>();
+    const add = (pid: string) => { for (const m of all) if (m.parentId === pid && !set.has(m.id)) { set.add(m.id); add(m.id); } };
+    add(id);
+    return set;
+  }
 
   ngOnInit(): void { this.load(); }
   load(): void { this.api.get<Menu[]>('/api/auth/menus').subscribe((m) => this.menus.set(m)); }
@@ -101,7 +115,7 @@ export class MenusPage implements OnInit {
     this.saving.set(true);
     const base = { label: this.form.label, route: this.form.route, icon: this.form.icon, sortOrder: +this.form.sortOrder, parentId: this.form.parentId || null };
     const done = {
-      next: () => { this.saving.set(false); this.cancel(); this.load(); },
+      next: () => { this.saving.set(false); this.cancel(); this.load(); this.perms.load().subscribe(); },
       error: (e: { error?: { message?: string } }) => { this.saving.set(false); this.err.set(e?.error?.message ?? 'Could not save menu.'); },
     };
     if (this.form.id) this.api.put(`/api/auth/menus/${this.form.id}`, base).subscribe(done);
@@ -110,15 +124,16 @@ export class MenusPage implements OnInit {
 
   edit(m: Menu): void {
     this.err.set('');
+    this.editingId.set(m.id);
     this.form = { id: m.id, key: m.key, label: m.label, route: m.route, icon: m.icon, sortOrder: m.sortOrder, parentId: m.parentId ?? null };
   }
 
-  cancel(): void { this.form = this.blank(); this.err.set(''); }
+  cancel(): void { this.form = this.blank(); this.editingId.set(null); this.err.set(''); }
 
   remove(m: Menu): void {
     if (!confirm(`Delete menu "${m.label}"?`)) return;
     this.api.delete(`/api/auth/menus/${m.id}`).subscribe({
-      next: () => this.load(),
+      next: () => { this.load(); this.perms.load().subscribe(); },
       error: (e) => alert(e?.error?.message ?? 'Could not delete menu.'),
     });
   }

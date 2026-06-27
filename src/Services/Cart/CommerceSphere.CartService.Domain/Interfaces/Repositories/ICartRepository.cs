@@ -10,4 +10,6 @@ public interface ICartRepository
     Task AddAsync(Cart cart, CancellationToken ct = default);
     void Update(Cart cart);
     Task<(IEnumerable<Cart> Items, int TotalCount)> GetPagedAsync(int pageNumber, int pageSize, CancellationToken ct = default);
+    // Orders = carts that have been checked out, newest first.
+    Task<IReadOnlyList<Cart>> GetOrdersAsync(CancellationToken ct = default);
 }

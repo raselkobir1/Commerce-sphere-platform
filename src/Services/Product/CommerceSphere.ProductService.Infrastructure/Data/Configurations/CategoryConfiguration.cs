@@ -15,8 +15,11 @@ public class CategoryConfiguration : IEntityTypeConfiguration<Category>
         builder.Property(c => c.Name).HasColumnName("name").HasMaxLength(100).IsRequired();
         builder.Property(c => c.Description).HasColumnName("description").HasMaxLength(500).IsRequired();
         builder.Property(c => c.IsActive).HasColumnName("is_active");
+        builder.Property(c => c.ParentId).HasColumnName("parent_id");
+        builder.Property(c => c.SortOrder).HasColumnName("sort_order");
         builder.Property(c => c.CreatedAt).HasColumnName("created_at");
         builder.Property(c => c.UpdatedAt).HasColumnName("updated_at");
+        builder.HasIndex(c => c.ParentId).HasDatabaseName("ix_categories_parent");
 
         // Same xmin optimistic-concurrency mapping as Product (see ProductConfiguration).
         builder.Property(c => c.RowVersion)

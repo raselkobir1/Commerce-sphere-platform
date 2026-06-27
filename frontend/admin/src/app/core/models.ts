@@ -87,6 +87,29 @@ export interface Category {
   name: string;
   description: string;
   isActive: boolean;
+  parentId?: string | null;
+  sortOrder: number;
+}
+
+export interface OrderItem {
+  id: string;
+  productId: string;
+  sku: string;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+}
+
+export interface Order {
+  id: string;
+  userId: string;
+  status: string;
+  items: OrderItem[];
+  totalAmount: number;
+  itemCount: number;
+  createdAt: string;
+  updatedAt?: string | null;
 }
 
 export interface InventoryItem {

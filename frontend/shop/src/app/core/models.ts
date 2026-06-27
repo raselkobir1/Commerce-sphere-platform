@@ -16,10 +16,20 @@ export interface Product {
   description: string;
   sku: string;
   price: number;
-  category: string; // holds the sub-category name (see data/taxonomy.ts)
+  category: string; // the category name (managed via the admin Categories page)
   imageUrl?: string | null;
   isActive: boolean;
   stock: number;
+}
+
+// Storefront categories (managed in admin), with optional parent for a 2-level tree.
+export interface Category {
+  id: string;
+  name: string;
+  description: string;
+  isActive: boolean;
+  parentId?: string | null;
+  sortOrder: number;
 }
 
 export interface CartItem {

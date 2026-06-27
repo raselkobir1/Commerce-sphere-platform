@@ -12,6 +12,7 @@ import { SettingsPage } from './pages/settings/settings';
 import { RolesPage } from './pages/roles/roles';
 import { MenusPage } from './pages/menus/menus';
 import { PermissionsPage } from './pages/permissions/permissions';
+import { OrdersPage } from './pages/orders/orders';
 
 export const routes: Routes = [
   { path: 'login', component: LoginPage },
@@ -27,6 +28,7 @@ export const routes: Routes = [
       { path: 'products/:id', component: ProductFormPage, canActivate: [canView('products')] },
       { path: 'categories', component: CategoriesPage, canActivate: [canView('categories')] },
       { path: 'inventory', component: InventoryPage, canActivate: [canView('inventory')] },
+      { path: 'orders', component: OrdersPage, canActivate: [canView('orders')] },
       { path: 'users', component: UsersPage, canActivate: [canView('users')] },
       { path: 'roles', component: RolesPage, canActivate: [canView('roles')] },
       { path: 'menus', component: MenusPage, canActivate: [canView('menus')] },

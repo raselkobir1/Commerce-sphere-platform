@@ -13,6 +13,17 @@ namespace CommerceSphere.CartService.API.Controllers;
 [Authorize]
 public class CartController(ICartManager cartManager) : ControllerBase
 {
+    // Admin order list — all checked-out carts (who bought what, when). Placed before the
+    // "{cartId:guid}" route; "orders" isn't a GUID so there's no conflict.
+    [HttpGet("orders")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetOrders(CancellationToken ct)
+    {
+        var result = await cartManager.GetOrdersAsync(ct);
+        return Ok(ApiResponse<object>.Ok(result, "Orders retrieved", HttpContext.TraceIdentifier, HttpContext.GetCorrelationId()));
+    }
+
     [HttpPost]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]

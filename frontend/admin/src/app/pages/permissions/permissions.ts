@@ -80,7 +80,7 @@ export class PermissionsPage implements OnInit {
       menuId: r.menuId, canView: r.canView, canCreate: r.canCreate, canEdit: r.canEdit, canDelete: r.canDelete,
     }));
     this.api.put(`/api/auth/roles/${this.roleId}/permissions`, { permissions }).subscribe({
-      next: () => { this.saving.set(false); this.msg.set('Permissions saved.'); },
+      next: () => { this.saving.set(false); this.msg.set('Permissions saved.'); this.perms.load().subscribe(); },
       error: () => { this.saving.set(false); this.msg.set('Could not save permissions.'); },
     });
   }

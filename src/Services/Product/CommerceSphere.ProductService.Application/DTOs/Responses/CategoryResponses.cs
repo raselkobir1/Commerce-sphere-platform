@@ -5,6 +5,8 @@ public record CategoryResponse(
     string Name,
     string Description,
     bool IsActive,
+    Guid? ParentId,
+    int SortOrder,
     DateTime CreatedAt,
     DateTime? UpdatedAt
 );

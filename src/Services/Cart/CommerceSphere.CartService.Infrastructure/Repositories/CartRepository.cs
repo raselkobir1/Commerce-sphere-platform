@@ -55,4 +55,12 @@ public class CartRepository(CartDbContext context) : ICartRepository
 
         return (items, totalCount);
     }
+
+    public async Task<IReadOnlyList<Cart>> GetOrdersAsync(CancellationToken ct = default) =>
+        await context.Carts
+            .Include(c => c.Items)
+            .AsNoTracking()
+            .Where(c => c.Status == CartStatus.CheckedOut)
+            .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt)
+            .ToListAsync(ct);
 }

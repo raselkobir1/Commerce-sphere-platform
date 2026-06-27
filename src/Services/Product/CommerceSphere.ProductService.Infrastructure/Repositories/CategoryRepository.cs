@@ -18,7 +18,7 @@ public class CategoryRepository(ProductDbContext db) : ICategoryRepository
     }
 
     public async Task<IReadOnlyList<Category>> GetAllAsync(CancellationToken ct = default) =>
-        await db.Categories.AsNoTracking().OrderBy(c => c.Name).ToListAsync(ct);
+        await db.Categories.AsNoTracking().OrderBy(c => c.SortOrder).ThenBy(c => c.Name).ToListAsync(ct);
 
     public async Task AddAsync(Category category, CancellationToken ct = default) =>
         await db.Categories.AddAsync(category, ct);

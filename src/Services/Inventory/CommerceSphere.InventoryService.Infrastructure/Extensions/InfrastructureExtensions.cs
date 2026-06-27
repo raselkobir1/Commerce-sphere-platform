@@ -37,8 +37,9 @@ public static class InfrastructureExtensions
         // Event producer (singleton — Kafka producer is thread-safe)
         services.AddSingleton<IInventoryEventProducer, InventoryEventProducer>();
 
-        // Background consumer (hosted service)
+        // Background consumers (hosted services)
         services.AddHostedService<ProductCreatedConsumer>();
+        services.AddHostedService<CartCheckedOutConsumer>();
 
         return services;
     }

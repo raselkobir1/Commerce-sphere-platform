@@ -1,14 +1,14 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
+import { Api } from '../../core/api';
 import { Auth } from '../../core/auth';
 import { Cart } from '../../core/cart';
 import { Products } from '../../core/products';
 import { Search } from '../../core/search';
 import { Toast } from '../../core/toast';
-import { Product } from '../../core/models';
+import { Category, Product } from '../../core/models';
 import { BdtPipe } from '../../core/bdt.pipe';
-import { TAXONOMY, parentOf } from '../../data/taxonomy';
 import { ratingFor, reviewsFor, stars } from '../../data/display';
 
 @Component({
@@ -16,23 +16,22 @@ import { ratingFor, reviewsFor, stars } from '../../data/display';
   imports: [BdtPipe, FormsModule, RouterLink],
   template: `
     <div class="container shop-layout">
-      <!-- ───── Left filter sidebar ───── -->
+      <!-- ───── Left dynamic category sidebar ───── -->
       <aside class="filters">
         <div class="group">
           <h3>Categories</h3>
-          <button class="cat-parent" [class.active]="!parent() && !sub()" (click)="selectAll()">
-            <span>🛍️</span> All products
+          <button class="cat-parent" [class.active]="!selected()" (click)="select(null)">
+            <span>🛍️</span> All products <span class="muted">({{ totalCount() }})</span>
           </button>
-          @for (cat of taxonomy; track cat.name) {
-            <button class="cat-parent" [class.active]="parent() === cat.name && !sub()" (click)="selectParent(cat.name)">
-              <span>{{ cat.icon }}</span> {{ cat.name }}
+
+          @for (node of tree(); track node.cat.id) {
+            <button class="cat-parent" [class.active]="selected() === node.cat.name" (click)="select(node.cat.name)">
+              <span>📂</span> {{ node.cat.name }} <span class="muted">({{ node.count }})</span>
             </button>
-            @if (parent() === cat.name) {
-              @for (s of cat.subs; track s) {
-                <button class="cat-sub" [class.active]="sub() === s" (click)="selectSub(s)">
-                  {{ s }} <span class="muted">({{ countFor(s) }})</span>
-                </button>
-              }
+            @for (child of node.children; track child.cat.id) {
+              <button class="cat-sub" [class.active]="selected() === child.cat.name" (click)="select(child.cat.name)">
+                {{ child.cat.name }} <span class="muted">({{ child.count }})</span>
+              </button>
             }
           }
         </div>
@@ -42,7 +41,7 @@ import { ratingFor, reviewsFor, stars } from '../../data/display';
           <div class="price-row">
             <input class="input" type="number" min="0" placeholder="Any" [ngModel]="maxPrice()"
                    (ngModelChange)="maxPrice.set($event ? +$event : null)" />
-            <span class="muted">USD</span>
+            <span class="muted">৳</span>
           </div>
         </div>
 
@@ -111,31 +110,43 @@ import { ratingFor, reviewsFor, stars } from '../../data/display';
 })
 export class CatalogPage implements OnInit {
   products = inject(Products);
+  private api = inject(Api);
   private auth = inject(Auth);
   private cart = inject(Cart);
   private search = inject(Search);
   private toast = inject(Toast);
   private router = inject(Router);
 
-  taxonomy = TAXONOMY;
-
-  parent = signal<string | null>(null);
-  sub = signal<string | null>(null);
+  private cats = signal<Category[]>([]);
+  selected = signal<string | null>(null); // selected category name (parent or child)
   maxPrice = signal<number | null>(null);
   inStockOnly = signal(false);
   sort = signal<'featured' | 'price-asc' | 'price-desc' | 'name'>('featured');
 
-  // The list after search + category + price + stock filters and sorting.
+  totalCount = computed(() => this.products.all().length);
+
+  // 2-level tree of active categories with product counts.
+  tree = computed(() => {
+    const cats = this.cats().filter((c) => c.isActive);
+    const order = (a: Category, b: Category) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name);
+    const tops = cats.filter((c) => !c.parentId).sort(order);
+    return tops.map((cat) => {
+      const children = cats.filter((c) => c.parentId === cat.id).sort(order).map((c) => ({ cat: c, count: this.countOf(c) }));
+      const own = this.products.all().filter((p) => p.category === cat.name).length;
+      const count = own + children.reduce((s, c) => s + c.count, 0);
+      return { cat, count, children };
+    });
+  });
+
+  // The list after category + search + price + stock filters and sorting.
   filtered = computed(() => {
     const term = this.search.term().trim().toLowerCase();
-    const parent = this.parent();
-    const sub = this.sub();
+    const allowed = this.allowedNames();
     const max = this.maxPrice();
 
     let list = this.products.all().filter((p) => {
       if (term && !(p.name + ' ' + p.description + ' ' + p.category).toLowerCase().includes(term)) return false;
-      if (sub && p.category !== sub) return false;
-      if (parent && parentOf(p.category) !== parent) return false;
+      if (allowed && !allowed.includes(p.category)) return false;
       if (max != null && p.price > max) return false;
       if (this.inStockOnly() && p.stock === 0) return false;
       return true;
@@ -151,31 +162,39 @@ export class CatalogPage implements OnInit {
     return list;
   });
 
-  heading = computed(() => this.sub() ?? this.parent() ?? (this.search.term() ? `Results for “${this.search.term()}”` : 'All products'));
+  heading = computed(() => this.selected() ?? (this.search.term() ? `Results for “${this.search.term()}”` : 'All products'));
 
   activeChips = computed(() => {
     const chips: { key: string; label: string; clear: () => void }[] = [];
     if (this.search.term()) chips.push({ key: 'q', label: `“${this.search.term()}”`, clear: () => this.search.term.set('') });
-    if (this.parent()) chips.push({ key: 'p', label: this.parent()!, clear: () => this.selectAll() });
-    if (this.sub()) chips.push({ key: 's', label: this.sub()!, clear: () => this.sub.set(null) });
-    if (this.maxPrice() != null) chips.push({ key: 'm', label: `≤ $${this.maxPrice()}`, clear: () => this.maxPrice.set(null) });
+    if (this.selected()) chips.push({ key: 'c', label: this.selected()!, clear: () => this.selected.set(null) });
+    if (this.maxPrice() != null) chips.push({ key: 'm', label: `≤ ৳${this.maxPrice()}`, clear: () => this.maxPrice.set(null) });
     return chips;
   });
 
   ngOnInit(): void {
     this.products.load();
+    this.api.get<Category[]>('/api/categories').subscribe((c) => this.cats.set(c));
   }
 
-  countFor(sub: string): number {
-    return this.products.all().filter((p) => p.category === sub).length;
+  private countOf(c: Category): number {
+    return this.products.all().filter((p) => p.category === c.name).length;
   }
 
-  selectAll(): void { this.parent.set(null); this.sub.set(null); }
-  selectParent(name: string): void { this.parent.set(name); this.sub.set(null); }
-  selectSub(s: string): void { this.parent.set(parentOf(s)); this.sub.set(s); }
+  // Category names a product may match for the current selection (a parent includes its children).
+  private allowedNames(): string[] | null {
+    const sel = this.selected();
+    if (!sel) return null;
+    const cat = this.cats().find((c) => c.name === sel);
+    if (!cat) return [sel];
+    const kids = this.cats().filter((c) => c.parentId === cat.id).map((c) => c.name);
+    return [cat.name, ...kids];
+  }
+
+  select(name: string | null): void { this.selected.set(name); }
 
   reset(): void {
-    this.selectAll();
+    this.selected.set(null);
     this.maxPrice.set(null);
     this.inStockOnly.set(false);
     this.search.term.set('');

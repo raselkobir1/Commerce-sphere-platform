@@ -108,25 +108,37 @@ public class RbacManager(IUnitOfWork uow, ILogger<RbacManager> logger) : IRbacMa
         logger.LogInformation("Menu deleted. MenuId: {MenuId}", id);
     }
 
-    // Enforces a clean 2-level tree: a parent must exist, must itself be top-level, can't be the
-    // menu itself, and a menu that already has children can't be turned into a child.
+    // Allows menus to nest to any depth. Guards only against cycles: a menu can't be its own
+    // parent, and its parent can't be one of its own descendants.
     private async Task ValidateParentAsync(Guid? parentId, Guid? selfId, CancellationToken ct)
     {
         if (parentId is null) return;
         if (parentId == selfId)
             throw new BusinessException("A menu cannot be its own parent.");
 
-        var parent = await uow.Menus.GetByIdAsync(parentId.Value, ct)
+        _ = await uow.Menus.GetByIdAsync(parentId.Value, ct)
             ?? throw new BusinessException("Selected parent menu does not exist.");
-        if (parent.ParentId is not null)
-            throw new BusinessException("Menus support two levels only — the parent must be a top-level menu.");
 
         if (selfId is not null)
         {
             var all = await uow.Menus.GetAllAsync(ct);
-            if (all.Any(m => m.ParentId == selfId))
-                throw new BusinessException("This menu has child menus, so it cannot become a child itself.");
+            if (DescendantIds(selfId.Value, all).Contains(parentId.Value))
+                throw new BusinessException("Cannot move a menu under one of its own sub-menus.");
         }
+    }
+
+    private static HashSet<Guid> DescendantIds(Guid id, IReadOnlyList<Menu> all)
+    {
+        var result = new HashSet<Guid>();
+        var stack = new Stack<Guid>(all.Where(m => m.ParentId == id).Select(m => m.Id));
+        while (stack.Count > 0)
+        {
+            var current = stack.Pop();
+            if (result.Add(current))
+                foreach (var child in all.Where(m => m.ParentId == current))
+                    stack.Push(child.Id);
+        }
+        return result;
     }
 
     // ── Permissions ────────────────────────────────────────────────────────
