@@ -8,24 +8,31 @@ import { Paged, Product } from '../../core/models';
 @Component({
   selector: 'app-categories',
   template: `
-    <div class="page-head"><h1>Categories</h1></div>
+    <div class="page-head">
+      <div><h1>Categories</h1><div class="sub">{{ rows().length }} categories in use</div></div>
+    </div>
 
     <p class="muted" style="margin-bottom:16px">
-      Categories come from the products themselves. Set a product's category on its edit page.
+      Categories come from the products themselves — set a product's category on its edit page.
     </p>
 
     <div class="card">
       @if (rows().length === 0) {
-        <p class="muted">No categories yet.</p>
+        <div class="empty">No categories yet.</div>
       } @else {
-        <table>
-          <thead><tr><th>Category</th><th>Products</th></tr></thead>
-          <tbody>
-            @for (row of rows(); track row.name) {
-              <tr><td>{{ row.name }}</td><td>{{ row.count }}</td></tr>
-            }
-          </tbody>
-        </table>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Category</th><th class="right">Products</th></tr></thead>
+            <tbody>
+              @for (row of rows(); track row.name) {
+                <tr>
+                  <td><span class="chip admin">{{ row.name }}</span></td>
+                  <td class="right cell-main">{{ row.count }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
       }
     </div>
   `,

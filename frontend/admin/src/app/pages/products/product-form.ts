@@ -12,7 +12,7 @@ import { Product } from '../../core/models';
   template: `
     <div class="page-head"><h1>{{ id() ? 'Edit product' : 'New product' }}</h1></div>
 
-    <form class="card" style="max-width:640px" (ngSubmit)="save()">
+    <form class="card card-pad" style="max-width:640px" (ngSubmit)="save()">
       <div class="field">
         <label>Name</label>
         <input class="input" name="name" [(ngModel)]="form.name" required />

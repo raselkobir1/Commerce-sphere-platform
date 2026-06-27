@@ -8,27 +8,39 @@ import { Auth } from '../../core/auth';
   imports: [FormsModule],
   template: `
     <div class="login-wrap">
-      <form class="login-card" (ngSubmit)="submit()">
-        <h1>Admin<span style="color:#3056d3">Sphere</span></h1>
-        <p class="sub">Sign in to manage your store</p>
+      <aside class="login-aside">
+        <div class="big">Run your store with<br />Admin<span style="color:#c7d2fe">Sphere</span></div>
+        <p>Manage products, categories, inventory and customers from one modern dashboard.</p>
+        <ul>
+          <li>Product & catalog management</li>
+          <li>Live inventory control</li>
+          <li>Customer insights</li>
+        </ul>
+      </aside>
 
-        <div class="field">
-          <label>Email</label>
-          <input class="input" type="email" name="email" [(ngModel)]="email" required />
-        </div>
-        <div class="field">
-          <label>Password</label>
-          <input class="input" type="password" name="password" [(ngModel)]="password" required />
-        </div>
+      <div class="login-main">
+        <form class="login-card" (ngSubmit)="submit()">
+          <div class="lead">Admin<span style="color:var(--brand)">Sphere</span></div>
+          <p class="sub">Sign in to your dashboard</p>
 
-        @if (error()) {
-          <p class="error">{{ error() }}</p>
-        }
+          <div class="field">
+            <label>Email</label>
+            <input class="input" type="email" name="email" [(ngModel)]="email" required />
+          </div>
+          <div class="field">
+            <label>Password</label>
+            <input class="input" type="password" name="password" [(ngModel)]="password" required />
+          </div>
 
-        <button class="btn btn-primary" style="width:100%" type="submit" [disabled]="loading()">
-          {{ loading() ? 'Signing in…' : 'Sign in' }}
-        </button>
-      </form>
+          @if (error()) {
+            <p class="error">{{ error() }}</p>
+          }
+
+          <button class="btn btn-primary" style="width:100%; justify-content:center" type="submit" [disabled]="loading()">
+            {{ loading() ? 'Signing in…' : 'Sign in' }}
+          </button>
+        </form>
+      </div>
     </div>
   `,
 })
