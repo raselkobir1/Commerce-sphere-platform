@@ -34,6 +34,23 @@ public class KeycloakOptions
     // 10 minutes is generous — OAuth flows rarely take longer. Increase if users have slow networks.
     public int StateTtlMinutes { get; set; } = 10;
 
+    // SECURITY: exact frontend origins (scheme://host[:port]) allowed to receive the tokens on the
+    // final SSO redirect. Without this, the caller-supplied redirectUri is an OPEN REDIRECT that
+    // leaks access/refresh tokens to any attacker-controlled URL. Empty = all redirects refused
+    // (fail closed). Configure via Keycloak:AllowedRedirectUris.
+    public List<string> AllowedRedirectUris { get; set; } = [];
+
+    // True only when redirectUri's origin exactly matches a configured allowed origin. Comparing the
+    // parsed origin (not a string prefix) avoids bypasses like "http://localhost:4300.evil.com".
+    public bool IsRedirectUriAllowed(string redirectUri)
+    {
+        if (!Uri.TryCreate(redirectUri, UriKind.Absolute, out var uri))
+            return false;
+        var origin = uri.GetLeftPart(UriPartial.Authority);
+        return AllowedRedirectUris.Any(a =>
+            string.Equals(a.TrimEnd('/'), origin, StringComparison.OrdinalIgnoreCase));
+    }
+
     // Full redirect URI sent to Keycloak and registered as an allowed redirect in the Keycloak client.
     public string CallbackUri => $"{CallbackBaseUrl.TrimEnd('/')}{CallbackPath}";
 

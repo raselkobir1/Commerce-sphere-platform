@@ -38,6 +38,9 @@ services:
       Keycloak__Providers__0: "google"
       Keycloak__Providers__1: "github"
       Keycloak__Providers__2: "facebook"
+      # SSO tokens may only be redirected back to these frontend origins (open-redirect guard).
+      Keycloak__AllowedRedirectUris__0: "http://localhost:4200"
+      Keycloak__AllowedRedirectUris__1: "http://localhost:4300"
       Email__SmtpHost: "mailpit"
       Email__SmtpPort: "1025"
       Email__AppBaseUrl: "http://localhost:5000"

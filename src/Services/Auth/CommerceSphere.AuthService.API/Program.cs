@@ -37,6 +37,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         {
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+            // Pin the signing algorithm so a token can't be accepted under a different alg
+            // (defence-in-depth against algorithm-confusion attacks).
+            ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
             ValidateIssuer = true,
             ValidIssuer = builder.Configuration["Jwt:Issuer"],
             ValidateAudience = true,

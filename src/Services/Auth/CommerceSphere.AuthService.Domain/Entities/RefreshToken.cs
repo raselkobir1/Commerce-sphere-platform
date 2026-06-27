@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+
 namespace CommerceSphere.AuthService.Domain.Entities;
 
 public class RefreshToken : BaseEntity
@@ -24,9 +26,9 @@ public class RefreshToken : BaseEntity
     public static RefreshToken Create(Guid userId, string createdByIp, int expiryDays = 7) =>
         new()
         {
-            // Concatenate two GUIDs (32 bytes) before Base64-encoding to get a 44-char
-            // cryptographically unpredictable token that is safe to store and transmit.
-            Token = Convert.ToBase64String([..Guid.NewGuid().ToByteArray(), ..Guid.NewGuid().ToByteArray()]),
+            // SECURITY: use a CSPRNG (not Guid.NewGuid, which is not guaranteed unpredictable) for
+            // this bearer credential. 32 random bytes → URL-safe Base64.
+            Token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)),
             UserId = userId,
             ExpiresAt = DateTime.UtcNow.AddDays(expiryDays),
             CreatedByIp = createdByIp

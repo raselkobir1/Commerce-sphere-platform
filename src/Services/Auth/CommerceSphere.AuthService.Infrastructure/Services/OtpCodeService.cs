@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using CommerceSphere.AuthService.Application.Interfaces;
 using StackExchange.Redis;
 
@@ -10,7 +11,8 @@ public class OtpCodeService(IConnectionMultiplexer redis) : IOtpCodeService
 
     public async Task<string> GenerateAndStoreAsync(Guid userId, CancellationToken ct = default)
     {
-        var code = Random.Shared.Next(100_000, 999_999).ToString();
+        // SECURITY: cryptographically-random 6-digit code (Random.Shared is predictable).
+        var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
         var db = redis.GetDatabase();
         await db.StringSetAsync($"{Prefix}{userId}", code, Ttl);
         return code;

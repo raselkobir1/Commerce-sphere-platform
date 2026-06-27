@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using CommerceSphere.AuthService.Application.Interfaces;
 using StackExchange.Redis;
@@ -11,7 +12,8 @@ public class ChallengeTokenService(IConnectionMultiplexer redis) : IChallengeTok
 
     public async Task<string> CreateAsync(Guid userId, ChallengeType type, CancellationToken ct = default)
     {
-        var token = Guid.NewGuid().ToString("N");
+        // SECURITY: CSPRNG bearer token (this token alone completes the 2FA/OTP step of login).
+        var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
         var payload = JsonSerializer.Serialize(new ChallengePayload(userId, type));
         var db = redis.GetDatabase();
         await db.StringSetAsync($"{Prefix}{token}", payload, Ttl);

@@ -27,7 +27,10 @@ public class AuthManager(
             throw new ConflictException($"Email '{request.Email}' is already registered.");
 
         var passwordHash = BC.HashPassword(request.Password);
-        var user = User.Create(request.Email, passwordHash, request.FirstName, request.LastName, request.Role);
+        // SECURITY: never trust a client-supplied role on public self-registration — that would let
+        // anyone create an Admin account. Public registration always creates a "Customer"; elevated
+        // roles must be provisioned out-of-band (admin tooling / seed), not via this endpoint.
+        var user = User.Create(request.Email, passwordHash, request.FirstName, request.LastName, role: "Customer");
 
         // Generate email verification token before first save so the token is durable.
         var verificationToken = user.GenerateEmailVerificationToken();
@@ -120,6 +123,16 @@ public class AuthManager(
 
         var user = await uow.Users.GetByIdAsync(existingToken.UserId, ct)
             ?? throw new NotFoundException(nameof(User), existingToken.UserId);
+
+        // SECURITY: a still-valid refresh token must not keep minting access tokens for an account
+        // that has since been deactivated. Revoke the presented token and refuse.
+        if (!user.IsActive)
+        {
+            existingToken.Revoke();
+            uow.RefreshTokens.Update(existingToken);
+            await uow.SaveChangesAsync(ct);
+            throw new UnauthorizedException("Account is deactivated.");
+        }
 
         var newRefreshToken = RefreshToken.Create(user.Id, ipAddress);
         existingToken.Revoke(newRefreshToken.Token);

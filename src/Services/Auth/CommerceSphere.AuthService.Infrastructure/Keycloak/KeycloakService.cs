@@ -31,6 +31,12 @@ public class KeycloakService(
     public async Task<SsoLoginUrlResponse> BuildLoginUrlAsync(
         string provider, string redirectUri, CancellationToken ct = default)
     {
+        // SECURITY: only allow redirecting tokens back to a configured frontend origin. Otherwise an
+        // attacker could send a victim an SSO link with redirectUri=https://evil.com and harvest the
+        // access/refresh tokens that the callback appends to that URL (open redirect → token theft).
+        if (!_opts.IsRedirectUriAllowed(redirectUri))
+            throw new SsoException("The provided redirectUri is not an allowed callback URL.");
+
         // Generate a random opaque state token (CSRF protection — verified in ProcessCallbackAsync).
         var state = Convert.ToBase64String(Guid.NewGuid().ToByteArray())
             .Replace("+", "-").Replace("/", "_").TrimEnd('=');
