@@ -1,8 +1,9 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { Auth } from '../core/auth';
+import { Theme } from '../core/theme';
 
-// The signed-in layout: icon sidebar + top bar + the current page.
+// The signed-in layout: icon sidebar + top bar (with the user/appearance menu) + the page.
 @Component({
   selector: 'app-shell',
   imports: [RouterOutlet, RouterLink, RouterLinkActive],
@@ -35,6 +36,14 @@ import { Auth } from '../core/auth';
           </a>
         </nav>
 
+        <div class="nav-label">Account</div>
+        <nav class="nav">
+          <a routerLink="/settings" routerLinkActive="active">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+            Settings
+          </a>
+        </nav>
+
         <div class="sidebar-foot">
           <div class="user-card">
             <span class="avatar sm">{{ initials() }}</span>
@@ -52,12 +61,58 @@ import { Auth } from '../core/auth';
             Welcome back, {{ auth.user()?.firstName }} 👋
             <small>Here's what's happening in your store</small>
           </div>
+
           <div class="top-actions">
-            <a class="linkout" href="http://localhost:4300" target="_blank" rel="noopener">View store ↗</a>
-            <span class="avatar">{{ initials() }}</span>
-            <button class="btn btn-sm" (click)="logout()">Sign out</button>
+            <div class="menu-wrap">
+              <button class="menu-trigger" (click)="menuOpen.set(!menuOpen())">
+                <span class="avatar sm">{{ initials() }}</span>
+                <span class="nm">{{ auth.user()?.firstName }}</span>
+                <span class="chev">▾</span>
+              </button>
+
+              @if (menuOpen()) {
+                <div class="backdrop" (click)="menuOpen.set(false)"></div>
+                <div class="menu">
+                  <div class="menu-head">
+                    <span class="avatar">{{ initials() }}</span>
+                    <div>
+                      <div class="nm">{{ auth.user()?.firstName }} {{ auth.user()?.lastName }}</div>
+                      <div class="em">{{ auth.user()?.email }}</div>
+                    </div>
+                  </div>
+
+                  <div class="menu-sec">
+                    <div class="lbl">Theme</div>
+                    <div class="seg">
+                      <button [class.on]="theme.mode() === 'light'" (click)="theme.setMode('light')">☀️ Light</button>
+                      <button [class.on]="theme.mode() === 'dark'" (click)="theme.setMode('dark')">🌙 Dark</button>
+                    </div>
+                    <div class="swatches">
+                      @for (a of theme.accents; track a) {
+                        <span class="swatch" [class.on]="theme.accent() === a"
+                              [style.background]="theme.accentColor(a)" (click)="theme.setAccent(a)"></span>
+                      }
+                    </div>
+                  </div>
+
+                  <a class="menu-item" routerLink="/settings" (click)="menuOpen.set(false)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.4 1a7 7 0 0 0-1.7-1L14.5 2h-4l-.4 2.4a7 7 0 0 0-1.7 1l-2.4-1-2 3.4L4 11a7 7 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 1.7 1l.4 2.4h4l.4-2.4a7 7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.6c.1-.3.1-.7.1-1z"/></svg>
+                    Account settings
+                  </a>
+                  <a class="menu-item" href="http://localhost:4300" target="_blank" rel="noopener" (click)="menuOpen.set(false)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6M10 14 21 3"/></svg>
+                    View store ↗
+                  </a>
+                  <button class="menu-item danger" (click)="logout()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></svg>
+                    Sign out
+                  </button>
+                </div>
+              }
+            </div>
           </div>
         </header>
+
         <main class="content">
           <router-outlet />
         </main>
@@ -67,7 +122,10 @@ import { Auth } from '../core/auth';
 })
 export class Shell {
   auth = inject(Auth);
+  theme = inject(Theme);
   private router = inject(Router);
+
+  menuOpen = signal(false);
 
   initials = computed(() => {
     const u = this.auth.user();
@@ -75,6 +133,7 @@ export class Shell {
   });
 
   logout(): void {
+    this.menuOpen.set(false);
     this.auth.logout();
     this.router.navigate(['/login']);
   }

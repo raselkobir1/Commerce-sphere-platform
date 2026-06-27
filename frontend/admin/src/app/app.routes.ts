@@ -8,6 +8,7 @@ import { ProductFormPage } from './pages/products/product-form';
 import { CategoriesPage } from './pages/categories/categories';
 import { UsersPage } from './pages/users/users';
 import { InventoryPage } from './pages/inventory/inventory';
+import { SettingsPage } from './pages/settings/settings';
 
 export const routes: Routes = [
   { path: 'login', component: LoginPage },
@@ -24,6 +25,7 @@ export const routes: Routes = [
       { path: 'categories', component: CategoriesPage },
       { path: 'users', component: UsersPage },
       { path: 'inventory', component: InventoryPage },
+      { path: 'settings', component: SettingsPage },
     ],
   },
   { path: '**', redirectTo: '' },

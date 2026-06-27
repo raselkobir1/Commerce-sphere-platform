@@ -8,11 +8,32 @@ export interface User {
   role: string;
   isActive: boolean;
   createdAt: string;
+  // Security flags (from /api/auth/me) — used by the Settings page.
+  emailVerified?: boolean;
+  isActiveTwoFactor?: boolean;
+  twoFactorConfirmed?: boolean;
+  isOtpAuthEnable?: boolean;
 }
 
 export interface AuthResult {
   accessToken: string;
   user: User;
+}
+
+// TOTP enrollment details returned by /api/auth/2fa/setup.
+export interface TwoFactorSetup {
+  secretKey: string;
+  qrCodeUri: string;
+  manualEntrySegments: string[];
+}
+
+// A login session (refresh token) from /api/auth/sessions.
+export interface Session {
+  id: string;
+  createdByIp: string;
+  createdAt: string;
+  expiresAt: string;
+  isActive: boolean;
 }
 
 export interface Product {
