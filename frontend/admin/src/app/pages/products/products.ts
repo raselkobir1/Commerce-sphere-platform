@@ -4,10 +4,11 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Api } from '../../core/api';
 import { Paged, Product } from '../../core/models';
+import { Pagination } from '../../shared/pagination';
 
 @Component({
   selector: 'app-products',
-  imports: [CurrencyPipe, FormsModule, RouterLink],
+  imports: [CurrencyPipe, FormsModule, RouterLink, Pagination],
   template: `
     <div class="page-head">
       <div><h1>Products</h1><div class="sub">Tick products, then click Publish / Unpublish · new products start as drafts</div></div>
@@ -68,24 +69,11 @@ import { Paged, Product } from '../../core/models';
           </table>
         </div>
 
-        <!-- Pagination -->
-        <div class="pager">
-          <span class="muted">{{ rangeStart() }}–{{ rangeEnd() }} of {{ total() }} products</span>
-          <div class="actions">
-            <select class="input" [ngModel]="pageSize()" (ngModelChange)="changePageSize($event)">
-              <option [ngValue]="10">10 / page</option>
-              <option [ngValue]="20">20 / page</option>
-              <option [ngValue]="50">50 / page</option>
-            </select>
-            <button class="btn btn-sm" [disabled]="pageNumber() <= 1" (click)="goTo(pageNumber() - 1)">‹ Prev</button>
-            <span style="align-self:center">Page {{ pageNumber() }} of {{ totalPages() }}</span>
-            <button class="btn btn-sm" [disabled]="pageNumber() >= totalPages()" (click)="goTo(pageNumber() + 1)">Next ›</button>
-          </div>
-        </div>
+        <app-pagination [total]="total()" [pageNumber]="pageNumber()" [pageSize]="pageSize()"
+                        (pageChange)="goTo($event)" (pageSizeChange)="changePageSize($event)" />
       }
     </div>
   `,
-  styles: [`.pager { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 20px; border-top:1px solid var(--line); flex-wrap:wrap; }`],
 })
 export class ProductsPage implements OnInit {
   private api = inject(Api);
@@ -98,9 +86,6 @@ export class ProductsPage implements OnInit {
   pageNumber = signal(1);
   pageSize = signal(20);
   total = signal(0);
-  totalPages = computed(() => Math.max(1, Math.ceil(this.total() / this.pageSize())));
-  rangeStart = computed(() => (this.total() === 0 ? 0 : (this.pageNumber() - 1) * this.pageSize() + 1));
-  rangeEnd = computed(() => Math.min(this.pageNumber() * this.pageSize(), this.total()));
 
   // Local checkbox selection (no API call on toggle); seeded from each product's published state.
   checked = signal<Set<string>>(new Set());
@@ -128,7 +113,6 @@ export class ProductsPage implements OnInit {
   runSearch(): void { this.pageNumber.set(1); this.load(); }
 
   goTo(page: number): void {
-    if (page < 1 || page > this.totalPages()) return;
     this.pageNumber.set(page);
     this.load();
   }

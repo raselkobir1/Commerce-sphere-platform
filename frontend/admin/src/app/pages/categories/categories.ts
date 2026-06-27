@@ -2,10 +2,11 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Api } from '../../core/api';
 import { Category } from '../../core/models';
+import { Pagination } from '../../shared/pagination';
 
 @Component({
   selector: 'app-categories',
-  imports: [FormsModule],
+  imports: [FormsModule, Pagination],
   template: `
     <div class="page-head">
       <div><h1>Categories</h1><div class="sub">{{ categories().length }} categories — used by the storefront navigation</div></div>
@@ -48,7 +49,7 @@ import { Category } from '../../core/models';
           <table>
             <thead><tr><th>Category</th><th>Description</th><th>Status</th><th class="right">Actions</th></tr></thead>
             <tbody>
-              @for (c of ordered(); track c.id) {
+              @for (c of pagedCategories(); track c.id) {
                 <tr>
                   <td [style.padding-left.px]="c.level ? 36 : 20">
                     @if (c.level) { <span class="muted" style="margin-right:4px">↳</span> }
@@ -65,6 +66,8 @@ import { Category } from '../../core/models';
             </tbody>
           </table>
         </div>
+        <app-pagination [total]="ordered().length" [pageNumber]="pageNumber()" [pageSize]="pageSize()"
+                        (pageChange)="pageNumber.set($event)" (pageSizeChange)="changePageSize($event)" />
       }
     </div>
   `,
@@ -92,6 +95,16 @@ export class CategoriesPage implements OnInit {
     }
     return out;
   });
+
+  // Client-side pagination over the flattened parent→child list.
+  pageNumber = signal(1);
+  pageSize = signal(20);
+  pagedCategories = computed(() => {
+    const start = (this.pageNumber() - 1) * this.pageSize();
+    return this.ordered().slice(start, start + this.pageSize());
+  });
+
+  changePageSize(size: number): void { this.pageSize.set(size); this.pageNumber.set(1); }
 
   ngOnInit(): void { this.load(); }
   load(): void { this.api.get<Category[]>('/api/categories').subscribe((c) => this.categories.set(c)); }

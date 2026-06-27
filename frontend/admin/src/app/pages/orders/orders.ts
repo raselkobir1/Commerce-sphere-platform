@@ -1,12 +1,13 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import { Api } from '../../core/api';
 import { Perms } from '../../core/perms';
 import { Order, Paged, User } from '../../core/models';
+import { Pagination } from '../../shared/pagination';
 
 @Component({
   selector: 'app-orders',
-  imports: [CurrencyPipe, DatePipe],
+  imports: [CurrencyPipe, DatePipe, Pagination],
   template: `
     <div class="page-head">
       <div><h1>Orders</h1><div class="sub">{{ orders().length }} orders placed by customers</div></div>
@@ -22,7 +23,7 @@ import { Order, Paged, User } from '../../core/models';
           <table>
             <thead><tr><th>Order</th><th>Customer</th><th>Items</th><th>Total</th><th>Placed</th><th>Status</th><th class="right">Actions</th></tr></thead>
             <tbody>
-              @for (o of orders(); track o.id) {
+              @for (o of pagedOrders(); track o.id) {
                 <tr style="cursor:pointer" (click)="toggle(o.id)">
                   <td class="cell-main">#{{ o.id.slice(0, 8).toUpperCase() }}</td>
                   <td>
@@ -59,6 +60,8 @@ import { Order, Paged, User } from '../../core/models';
             </tbody>
           </table>
         </div>
+        <app-pagination [total]="orders().length" [pageNumber]="pageNumber()" [pageSize]="pageSize()"
+                        (pageChange)="pageNumber.set($event)" (pageSizeChange)="changePageSize($event)" />
       }
     </div>
   `,
@@ -71,6 +74,16 @@ export class OrdersPage implements OnInit {
   loading = signal(false);
   expandedId = signal<string | null>(null);
   private users = signal<Map<string, User>>(new Map());
+
+  // Client-side pagination — the endpoint returns the full list.
+  pageNumber = signal(1);
+  pageSize = signal(20);
+  pagedOrders = computed(() => {
+    const start = (this.pageNumber() - 1) * this.pageSize();
+    return this.orders().slice(start, start + this.pageSize());
+  });
+
+  changePageSize(size: number): void { this.pageSize.set(size); this.pageNumber.set(1); }
 
   ngOnInit(): void {
     this.loading.set(true);

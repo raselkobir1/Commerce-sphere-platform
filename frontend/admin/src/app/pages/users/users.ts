@@ -4,12 +4,13 @@ import { FormsModule } from '@angular/forms';
 import { Api } from '../../core/api';
 import { Perms } from '../../core/perms';
 import { Paged, Role, User } from '../../core/models';
+import { Pagination } from '../../shared/pagination';
 
 @Component({
   selector: 'app-users',
-  imports: [DatePipe, FormsModule],
+  imports: [DatePipe, FormsModule, Pagination],
   template: `
-    <div class="page-head"><div><h1>Users</h1><div class="sub">{{ users().length }} users</div></div></div>
+    <div class="page-head"><div><h1>Users</h1><div class="sub">{{ total() }} users</div></div></div>
 
     @if (perms.can('users', 'create') || form.id) {
       <div class="card card-pad" style="max-width:680px; margin-bottom:18px">
@@ -74,6 +75,8 @@ import { Paged, Role, User } from '../../core/models';
           </tbody>
         </table>
       </div>
+      <app-pagination [total]="total()" [pageNumber]="pageNumber()" [pageSize]="pageSize()"
+                      (pageChange)="goTo($event)" (pageSizeChange)="changePageSize($event)" />
     </div>
   `,
 })
@@ -83,6 +86,9 @@ export class UsersPage implements OnInit {
 
   users = signal<User[]>([]);
   roles = signal<Role[]>([]);
+  pageNumber = signal(1);
+  pageSize = signal(20);
+  total = signal(0);
   form: { id?: string; firstName: string; lastName: string; email: string; password: string; role: string; isActive: boolean } =
     this.blank();
   saving = signal(false);
@@ -100,8 +106,12 @@ export class UsersPage implements OnInit {
   }
 
   load(): void {
-    this.api.get<Paged<User>>('/api/auth/users', { pageNumber: 1, pageSize: 100 }).subscribe((r) => this.users.set(r.items));
+    this.api.get<Paged<User>>('/api/auth/users', { pageNumber: this.pageNumber(), pageSize: this.pageSize() })
+      .subscribe((r) => { this.users.set(r.items); this.total.set(r.totalRecords); });
   }
+
+  goTo(page: number): void { this.pageNumber.set(page); this.load(); }
+  changePageSize(size: number): void { this.pageSize.set(size); this.pageNumber.set(1); this.load(); }
 
   save(): void {
     this.err.set('');

@@ -28,7 +28,7 @@ import { Search } from '../core/search';
             <a routerLink="/login">Sign in</a>
           }
 
-          <a class="cart-btn" routerLink="/cart">
+          <a class="cart-btn" routerLink="/cart" (click)="menuOpen.set(false)">
             🛒 Cart
             @if (cart.count() > 0) {
               <span class="cart-badge">{{ cart.count() }}</span>
