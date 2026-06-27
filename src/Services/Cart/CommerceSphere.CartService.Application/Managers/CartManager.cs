@@ -49,7 +49,10 @@ public class CartManager(
         var cart = await GetActiveCartAsync(cartId, ct);
 
         cart.AddItem(request.ProductId, request.Sku, request.ProductName, request.Quantity, request.UnitPrice);
-        uow.Carts.Update(cart);
+        // The cart is already change-tracked (loaded via GetByIdAsync), so SaveChanges persists the
+        // new item on its own. Do NOT call DbSet.Update() here: it marks the newly-added CartItem
+        // (which has a client-generated GUID key) as Modified instead of Added, emitting an UPDATE
+        // for a row that doesn't exist → DbUpdateConcurrencyException ("0 rows affected").
         await uow.SaveChangesAsync(ct);
 
         await eventProducer.PublishCartUpdatedAsync(new CartUpdatedEvent(
@@ -67,7 +70,7 @@ public class CartManager(
         var cart = await GetActiveCartAsync(cartId, ct);
 
         cart.UpdateItemQuantity(request.ProductId, request.Quantity);
-        uow.Carts.Update(cart);
+        // Cart is already change-tracked; SaveChanges persists the change (no DbSet.Update needed).
         await uow.SaveChangesAsync(ct);
 
         await eventProducer.PublishCartUpdatedAsync(new CartUpdatedEvent(
@@ -85,7 +88,7 @@ public class CartManager(
         var cart = await GetActiveCartAsync(cartId, ct);
 
         cart.RemoveItem(productId);
-        uow.Carts.Update(cart);
+        // Cart is already change-tracked; SaveChanges persists the change (no DbSet.Update needed).
         await uow.SaveChangesAsync(ct);
 
         await eventProducer.PublishCartUpdatedAsync(new CartUpdatedEvent(
@@ -137,7 +140,7 @@ public class CartManager(
 
         // Mark the cart as CheckedOut in DB first so it can't be modified while the saga runs.
         cart.Checkout();
-        uow.Carts.Update(cart);
+        // Cart is already change-tracked; SaveChanges persists the change (no DbSet.Update needed).
         await uow.SaveChangesAsync(ct);
 
         // Snapshot item details into the event payload because cart items could change
@@ -173,7 +176,7 @@ public class CartManager(
         }
 
         cart.Rollback(reason);
-        uow.Carts.Update(cart);
+        // Cart is already change-tracked; SaveChanges persists the change (no DbSet.Update needed).
         await uow.SaveChangesAsync(ct);
 
         await eventProducer.PublishCartRolledBackAsync(new CartRolledBackEvent(

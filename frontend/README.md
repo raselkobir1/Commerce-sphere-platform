@@ -1,79 +1,71 @@
-# CommerceSphere — Angular Frontend
+# CommerceSphere — Frontend
 
-Angular 22 single-page app for the CommerceSphere platform. Role-aware: **Admins** get a
-management dashboard; **Customers** get a storefront (browse → cart → checkout). Talks to the
-backend through the API Gateway (`http://localhost:5000`).
+Two separate Angular 22 apps that share one workspace (so there's a single `npm install`):
 
-## Stack
+| App | Folder | For | Dev URL |
+|---|---|---|---|
+| **AdminSphere** | `admin/` | Store admins — manage products, categories, inventory, users | http://localhost:4200 |
+| **ShopSphere** | `shop/` | Customers — browse products, cart, checkout | http://localhost:4300 |
 
-- **Angular 22** standalone components, **signals** for state, functional guards & interceptors.
-- **Angular Material** (Azure/Blue theme) + SCSS.
-- **Vitest** (`@angular/build:unit-test`) for unit tests.
-- No NgRx — state lives in small signal-based services (`AuthService`, `CartStore`).
+Both talk to the backend through the API Gateway at `http://localhost:5000`.
 
 ## Run
 
 ```bash
 cd frontend
-npm install          # first time only
-npm start            # ng serve → http://localhost:4200 (talks to gateway on :5000)
+npm install        # first time only (one install for both apps)
+
+npm run admin      # AdminSphere → http://localhost:4200
+npm run shop       # ShopSphere  → http://localhost:4300
 ```
 
-The backend must be running (`docker compose up -d` at the repo root). The gateway has CORS
-configured for `http://localhost:4200` (see `Cors:AllowedOrigins`).
+Run each in its own terminal. The backend must be up (`docker compose up -d` at the repo root).
+The gateway allows CORS from both ports (`Cors:AllowedOrigins`).
 
 ```bash
-npm test             # unit tests (Vitest)
-npm run build        # production bundle → dist/frontend
+npm run build:admin   # production bundle → dist/admin
+npm run build:shop    # production bundle → dist/shop
+npm run build         # build both
 ```
 
-## Environments
+## API base URL
 
-`apiBaseUrl` is the only environment knob.
+Each app sets the gateway URL in one place — `src/app/core/api.ts` (`API_URL`). It defaults to
+`http://localhost:5000`; change it for production.
 
-| File | Used by | apiBaseUrl |
-|---|---|---|
-| `src/environments/environment.development.ts` | `ng serve` | `http://localhost:5000` |
-| `src/environments/environment.ts` | `ng build` (prod) | set to your deployed gateway origin |
+## Layout
 
-## Architecture
+Both apps follow the same simple shape (no extra abstractions, plain services + signals):
 
 ```
-src/app/
-  core/                 # cross-cutting singletons
-    auth/               # AuthService (signal state), AuthApiService (every endpoint), TokenStorage
-    http/               # ApiService — unwraps the ApiResponse<T> envelope
-    interceptors/       # error · correlation-id · auth-token · refresh-on-401
-    guards/             # authGuard · roleGuard · guestGuard
-    models/             # typed contracts mirroring the backend DTOs
-    notifications/      # NotificationService (Material snackbars)
-  layouts/              # AuthLayout · AdminLayout · StoreLayout
-  features/
-    auth/               # login (+2FA/OTP step-up), register, forgot/reset, verify-email, SSO callback
-    account/            # profile, security (change password · 2FA · OTP · sessions) — shared by both shells
-    admin/              # dashboard, users, products (CRUD), inventory
-    storefront/         # catalog, product detail, cart, checkout (+ CartStore, product/cart API)
+admin/ (and shop/)
+  src/app/
+    core/          # api.ts (tiny HTTP helper) · auth.ts · auth.interceptor.ts · models.ts
+    pages/         # one folder per screen
+    app.routes.ts  # the routes
 ```
 
-### Auth flow
+### AdminSphere — `admin/`
+- **Login** (admins only)
+- **Dashboard** — product / customer / low-stock counts
+- **Products** — list, create, edit, activate/deactivate
+- **Categories** — read-only list of categories in use *(see note below)*
+- **Inventory** — view stock and set quantities
+- **Users** — read-only customer list
 
-- Login returns either tokens or a **challenge** (2FA / email OTP). The login page detects the
-  challenge and shows a step-up code screen, then calls `2fa/verify` or `otp/verify`.
-- Tokens are stored by `TokenStorageService`; `AuthService` holds the current `User` as a signal.
-- After login the user is routed by role: **Admin → `/admin`**, **Customer → `/shop`**.
-- The **refresh interceptor** transparently refreshes an expired access token on a 401 (single-flight:
-  concurrent requests queue and retry once the new token lands); if refresh fails, the user is logged out.
-- Every request carries an `X-Correlation-Id` for end-to-end tracing parity with the backend.
+### ShopSphere — `shop/`
+- **Catalog** — search + category filter, add to cart
+- **Product detail**
+- **Cart** — change quantities, remove items
+- **Checkout** — places the order (triggers the backend checkout saga)
+- **Sign in / Register**
 
-### Auth API coverage
+## Notes & backend limitations
 
-Every Auth endpoint is wired in `core/auth/auth-api.service.ts` and surfaced in the UI:
-register, login, refresh, revoke, me, users (admin), 2fa/otp verify, profile update, change password,
-sessions (list + revoke-all), email verify (send/resend/confirm), password forgot/reset,
-2fa setup/confirm/disable, otp toggle, and sso providers.
-
-## Tests
-
-`AuthApiService` (all endpoints), `TokenStorageService`, the three guards, `AuthService`
-(login branching, logout, hydrate), and the refresh-on-401 interceptor (retry + logout paths)
-are covered with `HttpTestingController`. Run `npm test`.
+- **Categories** are just a text field on each product — there is no Category table or CRUD
+  endpoint. AdminSphere's Categories page therefore lists the categories currently in use and is
+  read-only. Add a Category entity + endpoints to the Product service for full management.
+- **Users** — the Auth service only exposes a read-only admin listing (`GET /api/auth/users`).
+  There are no create/disable/role-change endpoints yet, so the Users page is read-only.
+- These apps handle the common **email + password** login. Accounts with 2FA/OTP enabled show a
+  friendly "extra verification not supported here" message.

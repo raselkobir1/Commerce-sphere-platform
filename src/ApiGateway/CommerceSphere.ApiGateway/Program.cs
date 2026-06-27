@@ -52,7 +52,7 @@ builder.Services.AddAuthorization(opts =>
 // can lock this down to the deployed frontend domain; dev defaults to the ng serve origin.
 const string SpaCorsPolicy = "SpaCors";
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-    ?? ["http://localhost:4200"];
+    ?? ["http://localhost:4200", "http://localhost:4300"]; // 4200 = AdminSphere, 4300 = ShopSphere
 builder.Services.AddCors(opts =>
 {
     opts.AddPolicy(SpaCorsPolicy, policy => policy

@@ -1,0 +1,129 @@
+/* AdminSphere global styles — plain, simple CSS. Components stay clean by using these classes. */
+* { box-sizing: border-box; }
+
+:root {
+  --bg: #f4f6fb;
+  --panel: #ffffff;
+  --ink: #1f2733;
+  --muted: #6b7688;
+  --line: #e3e8f0;
+  --brand: #3056d3;
+  --brand-dark: #1f2a44;
+  --green: #18a058;
+  --red: #d03050;
+  --amber: #d98e04;
+}
+
+html, body { margin: 0; height: 100%; }
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 14px;
+}
+
+a { color: var(--brand); text-decoration: none; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+h2 { font-size: 17px; margin: 0 0 12px; }
+
+/* Layout */
+.shell { display: flex; min-height: 100vh; }
+.sidebar {
+  width: 230px;
+  background: var(--brand-dark);
+  color: #cdd5e4;
+  padding: 20px 14px;
+  flex-shrink: 0;
+}
+.sidebar .logo { color: #fff; font-size: 19px; font-weight: 700; padding: 0 10px 22px; }
+.sidebar .logo span { color: #7aa2ff; }
+.sidebar a {
+  display: block;
+  color: #cdd5e4;
+  padding: 11px 14px;
+  border-radius: 8px;
+  margin-bottom: 4px;
+}
+.sidebar a:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.sidebar a.active { background: var(--brand); color: #fff; }
+.main { flex: 1; display: flex; flex-direction: column; }
+.topbar {
+  height: 60px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  padding: 0 24px;
+}
+.topbar .who { color: var(--muted); }
+.content { padding: 24px; }
+.page-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+
+/* Cards */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px;
+}
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; }
+.stat .num { font-size: 30px; font-weight: 700; margin-top: 6px; }
+.stat .label { color: var(--muted); }
+
+/* Buttons */
+.btn {
+  display: inline-block;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  padding: 9px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.btn:hover { background: #f0f3fa; }
+.btn-primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+.btn-primary:hover { background: #2545b8; }
+.btn-sm { padding: 6px 11px; font-size: 13px; }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* Tables */
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 12px 10px; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+tr:last-child td { border-bottom: none; }
+
+/* Badges */
+.badge { padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+.badge.on { background: #e3f6ec; color: var(--green); }
+.badge.off { background: #fbe5ea; color: var(--red); }
+.badge.low { background: #fdf0d9; color: var(--amber); }
+
+/* Forms */
+.field { margin-bottom: 14px; }
+.field label { display: block; margin-bottom: 6px; color: var(--muted); font-weight: 600; }
+.input, select, textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  background: #fff;
+}
+.input:focus, select:focus, textarea:focus { outline: 2px solid #c3d0f6; border-color: var(--brand); }
+.row { display: flex; gap: 14px; }
+.row .field { flex: 1; }
+
+.error { color: var(--red); margin: 8px 0; }
+.muted { color: var(--muted); }
+.toolbar { display: flex; gap: 10px; margin-bottom: 16px; }
+.toolbar .input { max-width: 320px; }
+
+/* Login */
+.login-wrap { min-height: 100vh; display: grid; place-items: center; background: var(--brand-dark); }
+.login-card { width: 360px; background: #fff; border-radius: 14px; padding: 30px; }
+.login-card h1 { text-align: center; }
+.login-card .sub { text-align: center; color: var(--muted); margin-bottom: 22px; }

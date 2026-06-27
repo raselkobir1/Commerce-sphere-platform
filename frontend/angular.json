@@ -3,81 +3,93 @@
   "version": 1,
   "cli": {
     "packageManager": "npm",
-    "analytics": "ee5dd6ae-42ac-4a6c-b187-33a5e0c287a4"
+    "analytics": "ca8ae72f-0153-44dc-9bb9-eac89c0613cd"
   },
-  "newProjectRoot": "projects",
+  "newProjectRoot": ".",
   "projects": {
-    "frontend": {
+    "admin": {
       "projectType": "application",
-      "schematics": {
-        "@schematics/angular:component": {
-          "style": "scss"
-        }
-      },
-      "root": "",
-      "sourceRoot": "src",
+      "schematics": { "@schematics/angular:component": { "style": "scss" } },
+      "root": "admin",
+      "sourceRoot": "admin/src",
       "prefix": "app",
       "architect": {
         "build": {
           "builder": "@angular/build:application",
           "options": {
-            "browser": "src/main.ts",
-            "tsConfig": "tsconfig.app.json",
+            "browser": "admin/src/main.ts",
+            "index": "admin/src/index.html",
+            "tsConfig": "admin/tsconfig.app.json",
             "inlineStyleLanguage": "scss",
-            "assets": [
-              {
-                "glob": "**/*",
-                "input": "public"
-              }
-            ],
-            "styles": [
-              "src/styles.scss"
-            ]
+            "assets": [{ "glob": "**/*", "input": "admin/public" }],
+            "styles": ["admin/src/styles.scss"]
           },
           "configurations": {
             "production": {
               "budgets": [
-                {
-                  "type": "initial",
-                  "maximumWarning": "1.2mb",
-                  "maximumError": "2mb"
-                },
-                {
-                  "type": "anyComponentStyle",
-                  "maximumWarning": "4kB",
-                  "maximumError": "8kB"
-                }
+                { "type": "initial", "maximumWarning": "1mb", "maximumError": "2mb" }
               ],
               "outputHashing": "all"
             },
             "development": {
               "optimization": false,
               "extractLicenses": false,
-              "sourceMap": true,
-              "fileReplacements": [
-                {
-                  "replace": "src/environments/environment.ts",
-                  "with": "src/environments/environment.development.ts"
-                }
-              ]
+              "sourceMap": true
             }
           },
           "defaultConfiguration": "production"
         },
         "serve": {
           "builder": "@angular/build:dev-server",
+          "options": { "port": 4200 },
           "configurations": {
-            "production": {
-              "buildTarget": "frontend:build:production"
-            },
-            "development": {
-              "buildTarget": "frontend:build:development"
-            }
+            "production": { "buildTarget": "admin:build:production" },
+            "development": { "buildTarget": "admin:build:development" }
           },
           "defaultConfiguration": "development"
+        }
+      }
+    },
+    "shop": {
+      "projectType": "application",
+      "schematics": { "@schematics/angular:component": { "style": "scss" } },
+      "root": "shop",
+      "sourceRoot": "shop/src",
+      "prefix": "app",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:application",
+          "options": {
+            "browser": "shop/src/main.ts",
+            "index": "shop/src/index.html",
+            "tsConfig": "shop/tsconfig.app.json",
+            "inlineStyleLanguage": "scss",
+            "assets": [{ "glob": "**/*", "input": "shop/public" }],
+            "styles": ["shop/src/styles.scss"]
+          },
+          "configurations": {
+            "production": {
+              "budgets": [
+                { "type": "initial", "maximumWarning": "1mb", "maximumError": "2mb" }
+              ],
+              "outputHashing": "all"
+            },
+            "development": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true
+            }
+          },
+          "defaultConfiguration": "production"
         },
-        "test": {
-          "builder": "@angular/build:unit-test"
+        "serve": {
+          "builder": "@angular/build:dev-server",
+          "options": { "port": 4300 },
+          "configurations": {
+            "production": { "buildTarget": "shop:build:production" },
+            "development": { "buildTarget": "shop:build:development" }
+          },
+          "defaultConfiguration": "development"
         }
       }
     }

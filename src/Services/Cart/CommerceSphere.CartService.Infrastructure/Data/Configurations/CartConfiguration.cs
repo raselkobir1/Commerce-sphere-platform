@@ -12,8 +12,10 @@ public class CartConfiguration : IEntityTypeConfiguration<Cart>
 
         builder.HasKey(c => c.Id);
 
+        // Domain-generated key (see CartItemConfiguration for the full rationale).
         builder.Property(c => c.Id)
-            .HasColumnName("id");
+            .HasColumnName("id")
+            .ValueGeneratedNever();
 
         builder.Property(c => c.UserId)
             .HasColumnName("user_id")
