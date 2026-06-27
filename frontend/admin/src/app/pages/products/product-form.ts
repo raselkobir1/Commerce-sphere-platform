@@ -1,8 +1,8 @@
-import { Component, OnInit, inject, input, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Api } from '../../core/api';
-import { Product } from '../../core/models';
+import { Category, Product } from '../../core/models';
 
 // Used for both "new product" and "edit product". When an :id is in the URL we load and update;
 // otherwise we create.
@@ -30,7 +30,19 @@ import { Product } from '../../core/models';
         </div>
         <div class="field">
           <label>Category</label>
-          <input class="input" name="category" [(ngModel)]="form.category" required />
+          <select name="category" [(ngModel)]="form.category" required>
+            <option value="" disabled>Select a category…</option>
+            @for (c of categories(); track c.id) {
+              <option [value]="c.name">{{ c.name }}</option>
+            }
+            <!-- keep a legacy/inactive value selectable if the product already uses it -->
+            @if (form.category && !categoryNames().includes(form.category)) {
+              <option [value]="form.category">{{ form.category }} (current)</option>
+            }
+          </select>
+          @if (categories().length === 0) {
+            <div class="cell-sub" style="margin-top:6px">No categories yet — add some on the Categories page.</div>
+          }
         </div>
       </div>
 
@@ -83,7 +95,13 @@ export class ProductFormPage implements OnInit {
   loading = signal(false);
   error = signal('');
 
+  // Active categories for the dropdown (managed on the Categories page).
+  categories = signal<Category[]>([]);
+  categoryNames = computed(() => this.categories().map((c) => c.name));
+
   ngOnInit(): void {
+    this.api.get<Category[]>('/api/categories').subscribe((c) => this.categories.set(c.filter((x) => x.isActive)));
+
     const id = this.id();
     if (id) {
       this.api.get<Product>(`/api/products/${id}`).subscribe((p) => {

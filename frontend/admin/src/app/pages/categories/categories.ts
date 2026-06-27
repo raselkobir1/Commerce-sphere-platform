@@ -1,33 +1,55 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { Api } from '../../core/api';
-import { Paged, Product } from '../../core/models';
+import { Category } from '../../core/models';
 
-// NOTE: The backend has no separate Category entity — a category is just a text field on a
-// product. So this page lists the distinct categories currently in use (read-only). To get full
-// category CRUD, the Product service would need a Category table + endpoints.
 @Component({
   selector: 'app-categories',
+  imports: [FormsModule],
   template: `
     <div class="page-head">
-      <div><h1>Categories</h1><div class="sub">{{ rows().length }} categories in use</div></div>
+      <div><h1>Categories</h1><div class="sub">{{ categories().length }} categories</div></div>
     </div>
 
-    <p class="muted" style="margin-bottom:16px">
-      Categories come from the products themselves — set a product's category on its edit page.
-    </p>
+    <!-- Create / edit form -->
+    <div class="card card-pad" style="max-width:560px; margin-bottom:18px">
+      <h2 style="margin-bottom:14px">{{ form.id ? 'Edit category' : 'New category' }}</h2>
+      <div class="field"><label>Name</label><input class="input" name="cn" [(ngModel)]="form.name" /></div>
+      <div class="field"><label>Description</label><input class="input" name="cd" [(ngModel)]="form.description" /></div>
+      @if (form.id) {
+        <label class="switch-row" style="margin-bottom:14px">
+          <span><strong>Active</strong><br /><span class="muted">Inactive categories are hidden from the product dropdown.</span></span>
+          <span class="switch"><input type="checkbox" [(ngModel)]="form.isActive" name="ca" /><i></i></span>
+        </label>
+      }
+      @if (err()) { <p class="error">{{ err() }}</p> }
+      <div class="actions" style="justify-content:flex-start">
+        <button class="btn btn-primary" (click)="save()" [disabled]="saving()">
+          {{ saving() ? 'Saving…' : (form.id ? 'Save changes' : 'Add category') }}
+        </button>
+        @if (form.id) { <button class="btn" (click)="cancel()">Cancel</button> }
+      </div>
+    </div>
 
+    <!-- List -->
     <div class="card">
-      @if (rows().length === 0) {
-        <div class="empty">No categories yet.</div>
+      <div class="card-head"><h2>All categories</h2></div>
+      @if (categories().length === 0) {
+        <div class="empty">No categories yet — add one above.</div>
       } @else {
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Category</th><th class="right">Products</th></tr></thead>
+            <thead><tr><th>Name</th><th>Description</th><th>Status</th><th class="right">Actions</th></tr></thead>
             <tbody>
-              @for (row of rows(); track row.name) {
+              @for (c of categories(); track c.id) {
                 <tr>
-                  <td><span class="chip admin">{{ row.name }}</span></td>
-                  <td class="right cell-main">{{ row.count }}</td>
+                  <td><span class="chip admin">{{ c.name }}</span></td>
+                  <td class="muted">{{ c.description || '—' }}</td>
+                  <td><span class="badge" [class.on]="c.isActive" [class.off]="!c.isActive">{{ c.isActive ? 'Active' : 'Hidden' }}</span></td>
+                  <td class="right"><div class="actions">
+                    <button class="btn btn-sm" (click)="edit(c)">Edit</button>
+                    <button class="btn btn-sm btn-danger" (click)="remove(c)">Delete</button>
+                  </div></td>
                 </tr>
               }
             </tbody>
@@ -40,15 +62,48 @@ import { Paged, Product } from '../../core/models';
 export class CategoriesPage implements OnInit {
   private api = inject(Api);
 
-  rows = signal<{ name: string; count: number }[]>([]);
+  categories = signal<Category[]>([]);
+  form: { id?: string; name: string; description: string; isActive: boolean } = { name: '', description: '', isActive: true };
+  saving = signal(false);
+  err = signal('');
 
   ngOnInit(): void {
-    this.api.get<Paged<Product>>('/api/products', { pageNumber: 1, pageSize: 500 }).subscribe((r) => {
-      const counts = new Map<string, number>();
-      for (const p of r.items) {
-        counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
-      }
-      this.rows.set([...counts].map(([name, count]) => ({ name, count })).sort((a, b) => a.name.localeCompare(b.name)));
-    });
+    this.load();
+  }
+
+  load(): void {
+    this.api.get<Category[]>('/api/categories').subscribe((c) => this.categories.set(c));
+  }
+
+  save(): void {
+    this.err.set('');
+    if (!this.form.name.trim()) { this.err.set('Name is required.'); return; }
+    this.saving.set(true);
+
+    const done = {
+      next: () => { this.saving.set(false); this.cancel(); this.load(); },
+      error: (e: { error?: { message?: string } }) => { this.saving.set(false); this.err.set(e?.error?.message ?? 'Could not save category.'); },
+    };
+
+    if (this.form.id) {
+      this.api.put(`/api/categories/${this.form.id}`, { name: this.form.name, description: this.form.description, isActive: this.form.isActive }).subscribe(done);
+    } else {
+      this.api.post('/api/categories', { name: this.form.name, description: this.form.description }).subscribe(done);
+    }
+  }
+
+  edit(c: Category): void {
+    this.err.set('');
+    this.form = { id: c.id, name: c.name, description: c.description, isActive: c.isActive };
+  }
+
+  cancel(): void {
+    this.form = { name: '', description: '', isActive: true };
+    this.err.set('');
+  }
+
+  remove(c: Category): void {
+    if (!confirm(`Delete category "${c.name}"? Existing products keep their category text.`)) return;
+    this.api.delete(`/api/categories/${c.id}`).subscribe(() => this.load());
   }
 }

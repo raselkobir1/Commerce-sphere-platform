@@ -48,6 +48,13 @@ export interface Product {
   stock: number;
 }
 
+export interface Category {
+  id: string;
+  name: string;
+  description: string;
+  isActive: boolean;
+}
+
 export interface InventoryItem {
   id: string;
   productId: string;
