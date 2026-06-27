@@ -121,6 +121,15 @@ img { max-width: 100%; display: block; }
 .chip { display: inline-flex; align-items: center; gap: 6px; background: var(--brand-soft); color: var(--brand-dark); border-radius: 20px; padding: 5px 12px; font-size: 13px; font-weight: 600; }
 .chip button { border: 0; background: none; cursor: pointer; color: inherit; font-size: 15px; line-height: 1; }
 
+/* ───── Category-wise home blocks ───── */
+.cat-block { margin-bottom: 34px; }
+.cat-block:last-child { margin-bottom: 0; }
+.cat-block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 2px solid var(--line); }
+.cat-block-head h2 { font-size: 20px; margin: 0; font-weight: 700; }
+.cat-block-head h2 .muted { font-size: 14px; font-weight: 500; }
+.link-btn { border: 0; background: none; color: var(--brand); font-weight: 600; font-size: 14px; cursor: pointer; white-space: nowrap; }
+.link-btn:hover { text-decoration: underline; }
+
 /* ───── Product grid / cards ───── */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 20px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; transition: .15s; }

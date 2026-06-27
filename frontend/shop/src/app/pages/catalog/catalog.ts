@@ -1,6 +1,6 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { Api } from '../../core/api';
 import { Auth } from '../../core/auth';
 import { Cart } from '../../core/cart';
@@ -8,13 +8,12 @@ import { Products } from '../../core/products';
 import { Search } from '../../core/search';
 import { Toast } from '../../core/toast';
 import { Category, Product } from '../../core/models';
-import { BdtPipe } from '../../core/bdt.pipe';
 import { BannerCarousel } from '../../layout/banner-carousel';
-import { ratingFor, reviewsFor, stars } from '../../data/display';
+import { ProductCard } from '../../layout/product-card';
 
 @Component({
   selector: 'app-catalog',
-  imports: [BdtPipe, FormsModule, RouterLink, BannerCarousel],
+  imports: [FormsModule, BannerCarousel, ProductCard],
   template: `
     <div class="container" style="padding-top:18px">
       <app-banner-carousel />
@@ -62,52 +61,61 @@ import { ratingFor, reviewsFor, stars } from '../../data/display';
 
       <!-- ───── Results ───── -->
       <main>
-        <div class="results-bar">
-          <div>
-            <h1 style="font-size:22px;margin:0">{{ heading() }}</h1>
-            <span class="muted">{{ filtered().length }} product(s)</span>
-          </div>
-          <select class="input" [ngModel]="sort()" (ngModelChange)="sort.set($event)">
-            <option value="featured">Sort: Featured</option>
-            <option value="price-asc">Price: Low to High</option>
-            <option value="price-desc">Price: High to Low</option>
-            <option value="name">Name: A–Z</option>
-          </select>
-        </div>
-
-        @if (activeChips().length) {
-          <div class="chips" style="margin-bottom:18px">
-            @for (c of activeChips(); track c.key) {
-              <span class="chip">{{ c.label }} <button (click)="c.clear()">×</button></span>
-            }
-          </div>
-        }
-
         @if (products.loading()) {
           <p class="muted">Loading products…</p>
-        } @else if (filtered().length === 0) {
-          <div class="empty">No products match your filters.<br /><button class="btn-ghost" (click)="reset()">Clear filters</button></div>
-        } @else {
-          <div class="grid">
-            @for (p of filtered(); track p.id) {
-              <div class="card">
-                <a class="thumb" [routerLink]="['/product', p.id]"
-                   [style.background-image]="p.imageUrl ? 'url(' + p.imageUrl + ')' : null">
-                  @if (p.stock === 0) { <span class="tag out">Out of stock</span> }
-                  @else if (p.stock <= 10) { <span class="tag low">Only {{ p.stock }} left</span> }
-                  @else { <span class="tag">{{ p.category }}</span> }
-                </a>
-                <div class="body">
-                  <a class="name" [routerLink]="['/product', p.id]">{{ p.name }}</a>
-                  <div class="stars">{{ stars(p.id) }} <span>{{ reviews(p.id) }}</span></div>
-                  <div class="price">{{ p.price | bdt }}</div>
-                  <button class="btn btn-primary btn-sm" [disabled]="p.stock === 0" (click)="add(p)">
-                    Add to cart
-                  </button>
-                </div>
-              </div>
-            }
+        } @else if (hasFilter()) {
+          <!-- Filtered / searched view: one flat, sortable grid -->
+          <div class="results-bar">
+            <div>
+              <h1 style="font-size:22px;margin:0">{{ heading() }}</h1>
+              <span class="muted">{{ filtered().length }} product(s)</span>
+            </div>
+            <select class="input" [ngModel]="sort()" (ngModelChange)="sort.set($event)">
+              <option value="featured">Sort: Featured</option>
+              <option value="price-asc">Price: Low to High</option>
+              <option value="price-desc">Price: High to Low</option>
+              <option value="name">Name: A–Z</option>
+            </select>
           </div>
+
+          @if (activeChips().length) {
+            <div class="chips" style="margin-bottom:18px">
+              @for (c of activeChips(); track c.key) {
+                <span class="chip">{{ c.label }} <button (click)="c.clear()">×</button></span>
+              }
+            </div>
+          }
+
+          @if (filtered().length === 0) {
+            <div class="empty">No products match your filters.<br /><button class="btn-ghost" (click)="reset()">Clear filters</button></div>
+          } @else {
+            <div class="grid">
+              @for (p of filtered(); track p.id) {
+                <app-product-card [product]="p" (add)="add($event)" />
+              }
+            </div>
+          }
+        } @else {
+          <!-- Default home view: a block per category -->
+          @if (byCategory().length === 0) {
+            <div class="empty">No products available yet.</div>
+          } @else {
+            @for (block of byCategory(); track block.name) {
+              <section class="cat-block">
+                <div class="cat-block-head">
+                  <h2>{{ block.name }} <span class="muted">({{ block.products.length }})</span></h2>
+                  @if (block.products.length > previewLimit) {
+                    <button class="link-btn" (click)="select(block.name)">View all →</button>
+                  }
+                </div>
+                <div class="grid">
+                  @for (p of block.products.slice(0, previewLimit); track p.id) {
+                    <app-product-card [product]="p" (add)="add($event)" />
+                  }
+                </div>
+              </section>
+            }
+          }
         }
       </main>
     </div>
@@ -128,7 +136,37 @@ export class CatalogPage implements OnInit {
   inStockOnly = signal(false);
   sort = signal<'featured' | 'price-asc' | 'price-desc' | 'name'>('featured');
 
+  previewLimit = 5; // products shown per category block before "View all"
+
   totalCount = computed(() => this.products.all().length);
+
+  // True when the shopper has narrowed the catalogue (category, search, price, or stock).
+  // When false the home page shows the category-wise blocks instead of one flat grid.
+  hasFilter = computed(() =>
+    !!this.selected() || !!this.search.term().trim() || this.maxPrice() != null || this.inStockOnly());
+
+  // Default home layout: one block per active category (parents then their children, in tree
+  // order), each holding the products whose category name matches. Unmatched products go last.
+  byCategory = computed(() => {
+    const cats = this.cats().filter((c) => c.isActive);
+    const order = (a: Category, b: Category) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name);
+    const all = this.products.all();
+    const blocks: { name: string; products: Product[] }[] = [];
+
+    for (const top of cats.filter((c) => !c.parentId).sort(order)) {
+      const own = all.filter((p) => p.category === top.name);
+      if (own.length) blocks.push({ name: top.name, products: own });
+      for (const kid of cats.filter((c) => c.parentId === top.id).sort(order)) {
+        const kp = all.filter((p) => p.category === kid.name);
+        if (kp.length) blocks.push({ name: kid.name, products: kp });
+      }
+    }
+
+    const known = new Set(cats.map((c) => c.name));
+    const other = all.filter((p) => !known.has(p.category));
+    if (other.length) blocks.push({ name: 'Other', products: other });
+    return blocks;
+  });
 
   // 2-level tree of active categories with product counts.
   tree = computed(() => {
@@ -205,9 +243,6 @@ export class CatalogPage implements OnInit {
     this.search.term.set('');
     this.sort.set('featured');
   }
-
-  stars(id: string): string { return stars(ratingFor(id)); }
-  reviews(id: string): string { return `(${reviewsFor(id)})`; }
 
   add(p: Product): void {
     if (!this.auth.isLoggedIn()) { this.router.navigate(['/login']); return; }
