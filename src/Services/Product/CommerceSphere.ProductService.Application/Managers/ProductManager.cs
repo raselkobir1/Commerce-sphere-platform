@@ -120,6 +120,7 @@ public class ProductManager(
             request.PageSize,
             request.Category,
             request.SearchTerm,
+            request.PublishedOnly,
             ct);
 
         return PagedResult<ProductResponse>.Create(
@@ -193,6 +194,27 @@ public class ProductManager(
         return response;
     }
 
+    public async Task<int> PublishProductsAsync(PublishProductsRequest request, string correlationId, CancellationToken ct = default)
+    {
+        var count = 0;
+        foreach (var id in request.ProductIds.Distinct())
+        {
+            var product = await uow.Products.GetByIdAsync(id, ct);
+            if (product is null) continue;
+            if (request.Published) product.Publish(); else product.Unpublish();
+            uow.Products.Update(product);
+            count++;
+        }
+        await uow.SaveChangesAsync(ct);
+
+        foreach (var id in request.ProductIds)
+            await cacheService.RemoveProductAsync(id, ct);
+
+        logger.LogInformation("Bulk {Action} {Count} product(s). CorrelationId: {CorrelationId}",
+            request.Published ? "published" : "unpublished", count, correlationId);
+        return count;
+    }
+
     private static ProductResponse MapToResponse(Product p) =>
-        new(p.Id, p.Name, p.Description, p.Sku, p.Price, p.Category, p.ImageUrl, p.IsActive, p.Stock, p.CreatedAt, p.UpdatedAt);
+        new(p.Id, p.Name, p.Description, p.Sku, p.Price, p.Category, p.ImageUrl, p.IsActive, p.IsPublished, p.Stock, p.CreatedAt, p.UpdatedAt);
 }

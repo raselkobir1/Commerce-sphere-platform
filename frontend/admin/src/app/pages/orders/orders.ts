@@ -1,6 +1,7 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import { Api } from '../../core/api';
+import { Perms } from '../../core/perms';
 import { Order, Paged, User } from '../../core/models';
 
 @Component({
@@ -19,7 +20,7 @@ import { Order, Paged, User } from '../../core/models';
       } @else {
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Order</th><th>Customer</th><th>Items</th><th>Total</th><th>Placed</th><th>Status</th></tr></thead>
+            <thead><tr><th>Order</th><th>Customer</th><th>Items</th><th>Total</th><th>Placed</th><th>Status</th><th class="right">Actions</th></tr></thead>
             <tbody>
               @for (o of orders(); track o.id) {
                 <tr style="cursor:pointer" (click)="toggle(o.id)">
@@ -31,11 +32,18 @@ import { Order, Paged, User } from '../../core/models';
                   <td>{{ o.itemCount }} item(s)</td>
                   <td class="cell-main">{{ o.totalAmount | currency: 'BDT' : '৳' }}</td>
                   <td class="muted">{{ (o.updatedAt || o.createdAt) | date: 'medium' }}</td>
-                  <td><span class="badge on">{{ o.status }}</span></td>
+                  <td>
+                    <span class="badge" [class.on]="o.status === 'CheckedOut'" [class.off]="o.status !== 'CheckedOut'">{{ o.status }}</span>
+                  </td>
+                  <td class="right">
+                    @if (o.status === 'CheckedOut' && perms.can('orders', 'edit')) {
+                      <button class="btn btn-sm btn-danger" (click)="cancel(o, $event)">Cancel</button>
+                    } @else { <span class="muted">—</span> }
+                  </td>
                 </tr>
                 @if (expandedId() === o.id) {
                   <tr>
-                    <td colspan="6" style="background:var(--thead)">
+                    <td colspan="7" style="background:var(--thead)">
                       <div style="padding:6px 0">
                         @for (it of o.items; track it.id) {
                           <div style="display:flex; justify-content:space-between; padding:4px 0; max-width:560px">
@@ -57,6 +65,7 @@ import { Order, Paged, User } from '../../core/models';
 })
 export class OrdersPage implements OnInit {
   private api = inject(Api);
+  perms = inject(Perms);
 
   orders = signal<Order[]>([]);
   loading = signal(false);
@@ -75,6 +84,20 @@ export class OrdersPage implements OnInit {
   }
 
   toggle(id: string): void { this.expandedId.set(this.expandedId() === id ? null : id); }
+
+  cancel(o: Order, e: Event): void {
+    e.stopPropagation(); // don't toggle the row's expand
+    const reason = prompt(`Cancel order #${o.id.slice(0, 8).toUpperCase()}?\nThe customer will be emailed and stock restored.\n\nReason (optional):`, 'Cancelled by admin');
+    if (reason === null) return; // user dismissed
+    this.api.post(`/api/carts/orders/${o.id}/cancel`, { reason }).subscribe({
+      next: () => this.reload(),
+      error: (err) => alert(err?.error?.message ?? 'Could not cancel the order.'),
+    });
+  }
+
+  private reload(): void {
+    this.api.get<Order[]>('/api/carts/orders').subscribe((o) => this.orders.set(o));
+  }
 
   customerName(userId: string): string {
     const u = this.users().get(userId);

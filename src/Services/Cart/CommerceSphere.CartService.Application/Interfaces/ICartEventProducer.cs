@@ -8,4 +8,5 @@ public interface ICartEventProducer
     Task PublishCartUpdatedAsync(CartUpdatedEvent @event);
     Task PublishCartCheckedOutAsync(CartCheckedOutEvent @event);
     Task PublishCartRolledBackAsync(CartRolledBackEvent @event);
+    Task PublishCartCancelledAsync(CartCancelledEvent @event);
 }

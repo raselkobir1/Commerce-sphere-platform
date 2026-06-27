@@ -33,6 +33,9 @@ public static class InfrastructureExtensions
         services.AddScoped<IIdempotencyService, RedisIdempotencyService>();
         services.AddSingleton<IUserEventProducer, UserEventProducer>();
 
+        // Emails the customer when an order is cancelled (consumes cart-cancelled).
+        services.AddHostedService<Kafka.Consumers.CartCancelledConsumer>();
+
         // Security services
         services.AddSingleton<ITotpService, TotpService>();
         services.AddSingleton<IOtpCodeService, OtpCodeService>();

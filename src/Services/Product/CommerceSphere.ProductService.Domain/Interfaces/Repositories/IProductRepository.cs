@@ -14,5 +14,6 @@ public interface IProductRepository
         int pageSize,
         string? category,
         string? searchTerm,
+        bool publishedOnly,
         CancellationToken ct = default);
 }

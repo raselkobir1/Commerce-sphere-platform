@@ -45,6 +45,7 @@ export interface Product {
   category: string;
   imageUrl?: string | null;
   isActive: boolean;
+  isPublished: boolean;
   stock: number;
 }
 

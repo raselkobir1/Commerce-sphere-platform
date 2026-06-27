@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using CommerceSphere.CartService.Application.DTOs.Requests;
 using CommerceSphere.CartService.Application.Interfaces;
 using CommerceSphere.Shared.Common.Correlation;
@@ -22,6 +23,28 @@ public class CartController(ICartManager cartManager) : ControllerBase
     {
         var result = await cartManager.GetOrdersAsync(ct);
         return Ok(ApiResponse<object>.Ok(result, "Orders retrieved", HttpContext.TraceIdentifier, HttpContext.GetCorrelationId()));
+    }
+
+    // The signed-in customer's own order history (derived from their token — can't view others').
+    [HttpGet("my-orders")]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetMyOrders(CancellationToken ct)
+    {
+        var userId = GetUserId();
+        var result = await cartManager.GetUserOrdersAsync(userId, ct);
+        return Ok(ApiResponse<object>.Ok(result, "Orders retrieved", HttpContext.TraceIdentifier, HttpContext.GetCorrelationId()));
+    }
+
+    // Admin cancels a placed order → restocks inventory + emails the customer.
+    [HttpPost("orders/{cartId:guid}/cancel")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> CancelOrder(Guid cartId, [FromBody] CancelOrderRequest? request, CancellationToken ct)
+    {
+        var correlationId = HttpContext.GetCorrelationId();
+        var result = await cartManager.CancelOrderAsync(cartId, request?.Reason ?? "", correlationId, ct);
+        return Ok(ApiResponse<object>.Ok(result, "Order cancelled", HttpContext.TraceIdentifier, correlationId));
     }
 
     [HttpPost]
@@ -99,4 +122,9 @@ public class CartController(ICartManager cartManager) : ControllerBase
         var result = await cartManager.CheckoutAsync(effectiveRequest, correlationId, ct);
         return Ok(ApiResponse<object>.Ok(result, "Cart checked out. Saga initiated.", HttpContext.TraceIdentifier, correlationId));
     }
+
+    private Guid GetUserId() =>
+        Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? User.FindFirst("sub")?.Value
+            ?? throw new UnauthorizedAccessException());
 }

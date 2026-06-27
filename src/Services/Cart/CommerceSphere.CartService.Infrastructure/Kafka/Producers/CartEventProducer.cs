@@ -14,6 +14,7 @@ public class CartEventProducer : ICartEventProducer, IDisposable
     private const string CartUpdatedTopic = "cart-updated";
     private const string CartCheckedOutTopic = "cart-checkedout";
     private const string CartRolledBackTopic = "cart-rolledback";
+    private const string CartCancelledTopic = "cart-cancelled";
 
     private readonly IProducer<string, string> _producer;
     private readonly ILogger<CartEventProducer> _logger;
@@ -52,6 +53,11 @@ public class CartEventProducer : ICartEventProducer, IDisposable
     public async Task PublishCartRolledBackAsync(CartRolledBackEvent @event)
     {
         await PublishAsync(CartRolledBackTopic, @event.CartId.ToString(), @event, "CartRolledBack", @event.CorrelationId);
+    }
+
+    public async Task PublishCartCancelledAsync(CartCancelledEvent @event)
+    {
+        await PublishAsync(CartCancelledTopic, @event.CartId.ToString(), @event, "CartCancelled", @event.CorrelationId);
     }
 
     private async Task PublishAsync<T>(string topic, string key, T @event, string eventType, string correlationId)

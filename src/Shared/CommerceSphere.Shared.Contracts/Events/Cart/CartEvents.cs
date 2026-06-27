@@ -37,4 +37,16 @@ public record CartRolledBackEvent(
     int Version = 1
 );
 
+// Raised when an admin cancels a placed order — drives stock restock + a customer email.
+public record CartCancelledEvent(
+    Guid CartId,
+    Guid UserId,
+    decimal TotalAmount,
+    IReadOnlyList<CartItemSnapshot> Items,
+    string Reason,
+    string CorrelationId,
+    DateTime OccurredAt,
+    int Version = 1
+);
+
 public record CartItemSnapshot(Guid ProductId, string Sku, string ProductName, int Quantity, decimal UnitPrice);

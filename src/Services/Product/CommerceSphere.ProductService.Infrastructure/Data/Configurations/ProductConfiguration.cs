@@ -19,6 +19,7 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.Property(p => p.Category).HasColumnName("category").HasMaxLength(100).IsRequired();
         builder.Property(p => p.ImageUrl).HasColumnName("image_url").HasMaxLength(500);
         builder.Property(p => p.IsActive).HasColumnName("is_active");
+        builder.Property(p => p.IsPublished).HasColumnName("is_published");
         builder.Property(p => p.Stock).HasColumnName("stock");
         builder.Property(p => p.CreatedAt).HasColumnName("created_at");
         builder.Property(p => p.UpdatedAt).HasColumnName("updated_at");

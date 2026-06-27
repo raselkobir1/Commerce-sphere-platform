@@ -5,7 +5,8 @@ public enum CartStatus
     Active,
     CheckedOut,
     Abandoned,
-    RolledBack
+    RolledBack,
+    Cancelled
 }
 
 public class Cart : BaseEntity
@@ -92,6 +93,13 @@ public class Cart : BaseEntity
     public void Abandon()
     {
         Status = CartStatus.Abandoned;
+        SetUpdated();
+    }
+
+    // Admin cancels a placed order (the manager enforces that only checked-out orders qualify).
+    public void Cancel()
+    {
+        Status = CartStatus.Cancelled;
         SetUpdated();
     }
 

@@ -9,6 +9,8 @@ public class Product : BaseEntity
     public string Category { get; private set; } = string.Empty;
     public string? ImageUrl { get; private set; }
     public bool IsActive { get; private set; } = true;
+    // Draft by default — a product is only shown in the storefront once an admin publishes it.
+    public bool IsPublished { get; private set; }
     public int Stock { get; private set; }
 
     private Product() { }
@@ -67,6 +69,18 @@ public class Product : BaseEntity
         SetUpdated();
     }
 
+    public void Publish()
+    {
+        IsPublished = true;
+        SetUpdated();
+    }
+
+    public void Unpublish()
+    {
+        IsPublished = false;
+        SetUpdated();
+    }
+
     public void Deactivate()
     {
         IsActive = false;
@@ -89,6 +103,16 @@ public class Product : BaseEntity
             throw new ArgumentException("Quantity must be positive.", nameof(qty));
 
         Stock = Math.Max(0, Stock - qty);
+        SetUpdated();
+    }
+
+    // Return catalog stock when an order is cancelled.
+    public void IncreaseStock(int qty)
+    {
+        if (qty <= 0)
+            throw new ArgumentException("Quantity must be positive.", nameof(qty));
+
+        Stock += qty;
         SetUpdated();
     }
 }

@@ -28,9 +28,13 @@ public class ProductRepository(ProductDbContext db) : IProductRepository
         int pageSize,
         string? category,
         string? searchTerm,
+        bool publishedOnly,
         CancellationToken ct = default)
     {
         var query = db.Products.AsNoTracking().AsQueryable();
+
+        if (publishedOnly)
+            query = query.Where(p => p.IsActive && p.IsPublished);
 
         if (!string.IsNullOrWhiteSpace(category))
             query = query.Where(p => p.Category == category.Trim());

@@ -37,6 +37,18 @@ public class ProductController(IProductManager productManager) : ControllerBase
         return Ok(ApiResponse<object>.Ok(result, "Product updated successfully", HttpContext.TraceIdentifier, correlationId));
     }
 
+    // Bulk publish / unpublish (admin product list). Only published products appear in the store.
+    [HttpPost("publish")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> PublishProducts([FromBody] PublishProductsRequest request, CancellationToken ct)
+    {
+        var correlationId = HttpContext.GetCorrelationId();
+        var count = await productManager.PublishProductsAsync(request, correlationId, ct);
+        return Ok(ApiResponse<object>.Ok(new { updated = count, request.Published },
+            request.Published ? "Products published" : "Products unpublished", HttpContext.TraceIdentifier, correlationId));
+    }
+
     [HttpGet("{id:guid}")]
     [AllowAnonymous]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]

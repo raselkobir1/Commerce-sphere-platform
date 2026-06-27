@@ -15,7 +15,7 @@ export class Products {
   load(): void {
     if (this.loaded() || this.loading()) return;
     this.loading.set(true);
-    this.api.get<Paged<Product>>('/api/products', { pageNumber: 1, pageSize: 200 }).subscribe({
+    this.api.get<Paged<Product>>('/api/products', { pageNumber: 1, pageSize: 200, publishedOnly: true }).subscribe({
       next: (r) => {
         this.all.set(r.items.filter((p) => p.isActive));
         this.loading.set(false);

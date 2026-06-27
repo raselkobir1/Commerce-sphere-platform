@@ -12,4 +12,6 @@ public interface ICartRepository
     Task<(IEnumerable<Cart> Items, int TotalCount)> GetPagedAsync(int pageNumber, int pageSize, CancellationToken ct = default);
     // Orders = carts that have been checked out, newest first.
     Task<IReadOnlyList<Cart>> GetOrdersAsync(CancellationToken ct = default);
+    // A single customer's order history, newest first.
+    Task<IReadOnlyList<Cart>> GetOrdersByUserAsync(Guid userId, CancellationToken ct = default);
 }

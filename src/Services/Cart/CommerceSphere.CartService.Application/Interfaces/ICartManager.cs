@@ -12,6 +12,8 @@ public interface ICartManager
     Task<CartResponse> GetCartAsync(Guid cartId, CancellationToken ct = default);
     Task<CartResponse> GetCartByUserIdAsync(Guid userId, CancellationToken ct = default);
     Task<IReadOnlyList<CartResponse>> GetOrdersAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<CartResponse>> GetUserOrdersAsync(Guid userId, CancellationToken ct = default);
+    Task<CartResponse> CancelOrderAsync(Guid cartId, string reason, string correlationId, CancellationToken ct = default);
     Task<CartResponse> CheckoutAsync(CheckoutCartRequest request, string correlationId, CancellationToken ct = default);
     Task RollbackAsync(Guid cartId, string reason, CancellationToken ct = default);
 }

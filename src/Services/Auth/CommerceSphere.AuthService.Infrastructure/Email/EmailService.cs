@@ -52,6 +52,20 @@ public class EmailService(
         return SendAsync(toEmail, toName, "Your CommerceSphere login code", body, ct);
     }
 
+    public Task SendOrderCancelledAsync(string toEmail, string toName, string orderRef, string reason, CancellationToken ct = default)
+    {
+        var body = $"""
+            <h2>Your order has been cancelled</h2>
+            <p>Hi {toName},</p>
+            <p>We're writing to let you know that your order <strong>{orderRef}</strong> has been cancelled.</p>
+            <p><strong>Reason:</strong> {reason}</p>
+            <p>Any reserved stock has been released. If you believe this was a mistake or have any
+            questions, please contact our support team.</p>
+            <p>— The CommerceSphere team</p>
+            """;
+        return SendAsync(toEmail, toName, $"Your CommerceSphere order {orderRef} was cancelled", body, ct);
+    }
+
     private async Task SendAsync(string toEmail, string toName, string subject, string htmlBody, CancellationToken ct)
     {
         var message = new MimeMessage();

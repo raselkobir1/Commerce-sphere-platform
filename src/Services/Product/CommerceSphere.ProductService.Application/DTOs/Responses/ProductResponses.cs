@@ -9,6 +9,7 @@ public record ProductResponse(
     string Category,
     string? ImageUrl,
     bool IsActive,
+    bool IsPublished,
     int Stock,
     DateTime CreatedAt,
     DateTime? UpdatedAt

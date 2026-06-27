@@ -3,6 +3,10 @@
 export interface User {
   id: string;
   firstName: string;
+  lastName?: string;
+  email?: string;
+  emailVerified?: boolean;
+  createdAt?: string;
 }
 
 export interface AuthResult {
@@ -46,6 +50,17 @@ export interface Cart {
   items: CartItem[];
   totalAmount: number;
   itemCount: number;
+}
+
+// A past order (checked-out / cancelled cart) for the customer's history.
+export interface Order {
+  id: string;
+  status: string;
+  items: CartItem[];
+  totalAmount: number;
+  itemCount: number;
+  createdAt: string;
+  updatedAt?: string | null;
 }
 
 // Backend paginated list envelope (the shop only reads the items).

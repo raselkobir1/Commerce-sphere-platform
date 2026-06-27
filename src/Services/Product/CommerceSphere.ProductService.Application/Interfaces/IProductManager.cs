@@ -12,4 +12,5 @@ public interface IProductManager
     Task<PagedResult<ProductResponse>> GetPagedAsync(GetProductsRequest request, CancellationToken ct = default);
     Task<ProductResponse> ActivateAsync(Guid id, string correlationId, CancellationToken ct = default);
     Task<ProductResponse> DeactivateAsync(Guid id, string correlationId, CancellationToken ct = default);
+    Task<int> PublishProductsAsync(PublishProductsRequest request, string correlationId, CancellationToken ct = default);
 }

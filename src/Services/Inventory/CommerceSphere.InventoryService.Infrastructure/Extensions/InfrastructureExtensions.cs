@@ -40,6 +40,7 @@ public static class InfrastructureExtensions
         // Background consumers (hosted services)
         services.AddHostedService<ProductCreatedConsumer>();
         services.AddHostedService<CartCheckedOutConsumer>();
+        services.AddHostedService<CartCancelledConsumer>();
 
         return services;
     }

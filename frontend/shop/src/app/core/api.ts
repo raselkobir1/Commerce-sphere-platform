@@ -33,6 +33,10 @@ export class Api {
     return this.http.put<Envelope<T>>(API_URL + path, body ?? {}).pipe(map((r) => r.data));
   }
 
+  patch<T>(path: string, body?: unknown): Observable<T> {
+    return this.http.patch<Envelope<T>>(API_URL + path, body ?? {}).pipe(map((r) => r.data));
+  }
+
   delete<T>(path: string): Observable<T> {
     return this.http.delete<Envelope<T>>(API_URL + path).pipe(map((r) => r.data));
   }

@@ -60,7 +60,15 @@ public class CartRepository(CartDbContext context) : ICartRepository
         await context.Carts
             .Include(c => c.Items)
             .AsNoTracking()
-            .Where(c => c.Status == CartStatus.CheckedOut)
+            .Where(c => c.Status == CartStatus.CheckedOut || c.Status == CartStatus.Cancelled)
+            .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt)
+            .ToListAsync(ct);
+
+    public async Task<IReadOnlyList<Cart>> GetOrdersByUserAsync(Guid userId, CancellationToken ct = default) =>
+        await context.Carts
+            .Include(c => c.Items)
+            .AsNoTracking()
+            .Where(c => c.UserId == userId && (c.Status == CartStatus.CheckedOut || c.Status == CartStatus.Cancelled))
             .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt)
             .ToListAsync(ct);
 }

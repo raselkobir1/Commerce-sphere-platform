@@ -133,6 +133,41 @@ public class CartManager(
         return orders.Select(MapToResponse).ToList();
     }
 
+    public async Task<IReadOnlyList<CartResponse>> GetUserOrdersAsync(Guid userId, CancellationToken ct = default)
+    {
+        var orders = await uow.Carts.GetOrdersByUserAsync(userId, ct);
+        return orders.Select(MapToResponse).ToList();
+    }
+
+    public async Task<CartResponse> CancelOrderAsync(Guid cartId, string reason, string correlationId, CancellationToken ct = default)
+    {
+        var cart = await uow.Carts.GetByIdAsync(cartId, ct)
+            ?? throw new NotFoundException(nameof(Cart), cartId);
+
+        if (cart.Status != CartStatus.CheckedOut)
+            throw new BusinessException($"Only checked-out orders can be cancelled (current status: {cart.Status}).");
+
+        cart.Cancel();
+
+        // Snapshot items before saving so the event carries what to restock / email about.
+        var snapshots = cart.Items
+            .Select(i => new CartItemSnapshot(i.ProductId, i.Sku, i.ProductName, i.Quantity, i.UnitPrice))
+            .ToList()
+            .AsReadOnly();
+
+        await uow.SaveChangesAsync(ct);
+
+        await eventProducer.PublishCartCancelledAsync(new CartCancelledEvent(
+            cart.Id, cart.UserId, cart.TotalAmount, snapshots,
+            string.IsNullOrWhiteSpace(reason) ? "Cancelled by admin" : reason.Trim(),
+            correlationId, DateTime.UtcNow));
+
+        await cacheService.RemoveCartAsync(cart.Id);
+
+        logger.LogInformation("Order {CartId} cancelled by admin. Reason: {Reason}", cart.Id, reason);
+        return MapToResponse(cart);
+    }
+
     public async Task<CartResponse> CheckoutAsync(CheckoutCartRequest request, string correlationId, CancellationToken ct = default)
     {
         var cart = await uow.Carts.GetByIdAsync(request.CartId, ct)

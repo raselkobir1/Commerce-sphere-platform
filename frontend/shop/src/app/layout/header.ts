@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { Auth } from '../core/auth';
@@ -24,18 +24,40 @@ import { Search } from '../core/search';
         </form>
 
         <div class="header-actions">
-          @if (auth.isLoggedIn()) {
-            <span class="muted">Hi, {{ auth.user()?.firstName }}</span>
-            <a href="#" (click)="logout($event)">Sign out</a>
-          } @else {
+          @if (!auth.isLoggedIn()) {
             <a routerLink="/login">Sign in</a>
           }
+
           <a class="cart-btn" routerLink="/cart">
             🛒 Cart
             @if (cart.count() > 0) {
               <span class="cart-badge">{{ cart.count() }}</span>
             }
           </a>
+
+          @if (auth.isLoggedIn()) {
+            <div class="user-menu">
+              <button class="avatar-btn" (click)="menuOpen.set(!menuOpen())" [title]="auth.user()?.firstName || 'Account'">
+                {{ initials() }}
+              </button>
+
+              @if (menuOpen()) {
+                <div class="backdrop" (click)="menuOpen.set(false)"></div>
+                <div class="user-dropdown">
+                  <div class="ud-head">
+                    <span class="avatar-lg">{{ initials() }}</span>
+                    <div class="ud-id">
+                      <div class="nm">{{ auth.user()?.firstName }} {{ auth.user()?.lastName }}</div>
+                      <div class="em">{{ auth.user()?.email }}</div>
+                    </div>
+                  </div>
+                  <a class="ud-item" routerLink="/account" (click)="menuOpen.set(false)">👤 My account</a>
+                  <a class="ud-item" routerLink="/orders" (click)="menuOpen.set(false)">🧾 My orders</a>
+                  <button class="ud-item danger" (click)="logout()">↩ Sign out</button>
+                </div>
+              }
+            </div>
+          }
         </div>
       </div>
     </header>
@@ -47,12 +69,19 @@ export class Header {
   search = inject(Search);
   private router = inject(Router);
 
+  menuOpen = signal(false);
+
+  initials = computed(() => {
+    const u = this.auth.user();
+    return ((u?.firstName?.[0] ?? '') + (u?.lastName?.[0] ?? '')).toUpperCase() || 'U';
+  });
+
   submit(): void {
     this.router.navigate(['/']);
   }
 
-  logout(e: Event): void {
-    e.preventDefault();
+  logout(): void {
+    this.menuOpen.set(false);
     this.auth.logout();
     this.cart.clear();
     this.router.navigate(['/']);

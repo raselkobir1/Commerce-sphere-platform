@@ -14,3 +14,5 @@ public record UpdateCartItemRequest(Guid ProductId, int Quantity);
 public record RemoveCartItemRequest(Guid ProductId);
 
 public record CheckoutCartRequest(Guid CartId, Guid UserId);
+
+public record CancelOrderRequest(string? Reason);
