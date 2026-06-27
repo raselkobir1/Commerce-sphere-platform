@@ -92,6 +92,18 @@ export interface Category {
   sortOrder: number;
 }
 
+export interface Banner {
+  id: string;
+  title: string;
+  subtitle: string;
+  imageUrl: string;
+  linkUrl: string;
+  isActive: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt?: string | null;
+}
+
 export interface OrderItem {
   id: string;
   productId: string;

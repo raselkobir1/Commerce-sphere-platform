@@ -6,6 +6,7 @@ public interface IUnitOfWork : IDisposable
 {
     IProductRepository Products { get; }
     ICategoryRepository Categories { get; }
+    IBannerRepository Banners { get; }
     Task<int> SaveChangesAsync(CancellationToken ct = default);
     Task BeginTransactionAsync(CancellationToken ct = default);
     Task CommitTransactionAsync(CancellationToken ct = default);

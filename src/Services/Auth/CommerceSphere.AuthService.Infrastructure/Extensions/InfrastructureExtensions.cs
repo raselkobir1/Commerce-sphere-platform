@@ -89,6 +89,7 @@ public static class InfrastructureExtensions
                 Menu.Create("dashboard", "Dashboard", "/dashboard", "📊", 1),
                 Menu.Create("products", "Products", "/products", "🛍️", 2),
                 Menu.Create("categories", "Categories", "/categories", "🏷️", 3),
+                Menu.Create("banners", "Banners", "/banners", "🖼️", 4),
                 Menu.Create("inventory", "Inventory", "/inventory", "📦", 4),
                 Menu.Create("users", "Users", "/users", "👥", 5),
                 Menu.Create("roles", "Roles", "/roles", "🛡️", 6),
@@ -96,6 +97,11 @@ public static class InfrastructureExtensions
                 Menu.Create("permissions", "Permissions", "/permissions", "🔐", 8),
                 Menu.Create("settings", "Settings", "/settings", "⚙️", 9));
         }
+
+        // Ensure newer menus exist even when the table was seeded by an earlier version
+        // (the block above only runs on a completely empty menu table).
+        if (!await db.Menus.AnyAsync(m => m.Key == "banners"))
+            await db.Menus.AddAsync(Menu.Create("banners", "Banners", "/banners", "🖼️", 4));
 
         await db.SaveChangesAsync();
 

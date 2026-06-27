@@ -9,12 +9,17 @@ import { Search } from '../../core/search';
 import { Toast } from '../../core/toast';
 import { Category, Product } from '../../core/models';
 import { BdtPipe } from '../../core/bdt.pipe';
+import { BannerCarousel } from '../../layout/banner-carousel';
 import { ratingFor, reviewsFor, stars } from '../../data/display';
 
 @Component({
   selector: 'app-catalog',
-  imports: [BdtPipe, FormsModule, RouterLink],
+  imports: [BdtPipe, FormsModule, RouterLink, BannerCarousel],
   template: `
+    <div class="container" style="padding-top:18px">
+      <app-banner-carousel />
+    </div>
+
     <div class="container shop-layout">
       <!-- ───── Left dynamic category sidebar ───── -->
       <aside class="filters">

@@ -65,6 +65,26 @@ img { max-width: 100%; display: block; }
 .ud-item:hover { background: var(--bg); }
 .ud-item.danger { color: var(--red); }
 
+/* ───── Home-page banner carousel ───── */
+.carousel { position: relative; height: 320px; border-radius: 16px; overflow: hidden; background: var(--panel); border: 1px solid var(--line); }
+@media (max-width: 860px) { .carousel { height: 200px; } }
+.carousel .slide { position: absolute; inset: 0; display: block; background-size: cover; background-position: center; opacity: 0; transition: opacity .6s ease; pointer-events: none; }
+.carousel .slide.on { opacity: 1; pointer-events: auto; }
+.carousel .slide-overlay { position: absolute; inset: 0; display: flex; align-items: center; background: linear-gradient(90deg, rgba(0,0,0,.6) 0%, rgba(0,0,0,.25) 45%, rgba(0,0,0,0) 75%); }
+.carousel .slide-text { padding: 0 56px; max-width: 60%; color: #fff; }
+@media (max-width: 860px) { .carousel .slide-text { padding: 0 24px; max-width: 85%; } }
+.carousel .slide-text h2 { font-size: 34px; line-height: 1.15; margin: 0 0 10px; font-weight: 800; }
+@media (max-width: 860px) { .carousel .slide-text h2 { font-size: 22px; } }
+.carousel .slide-text p { font-size: 16px; margin: 0 0 14px; opacity: .92; }
+.carousel .slide-cta { display: inline-block; background: var(--accent); color: #fff; padding: 9px 18px; border-radius: 999px; font-weight: 600; font-size: 14px; }
+.carousel .car-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 42px; height: 42px; border-radius: 50%; border: 0; background: rgba(255,255,255,.85); color: #111; font-size: 26px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background .15s; }
+.carousel .car-nav:hover { background: #fff; }
+.carousel .car-nav.prev { left: 16px; }
+.carousel .car-nav.next { right: 16px; }
+.carousel .car-dots { position: absolute; left: 0; right: 0; bottom: 16px; display: flex; justify-content: center; gap: 8px; }
+.carousel .dot { width: 10px; height: 10px; border-radius: 50%; border: 0; padding: 0; background: rgba(255,255,255,.5); cursor: pointer; transition: background .15s, transform .15s; }
+.carousel .dot.on { background: #fff; transform: scale(1.25); }
+
 /* ───── Catalogue layout ───── */
 .shop-layout { display: grid; grid-template-columns: 248px 1fr; gap: 26px; align-items: start; }
 @media (max-width: 860px) { .shop-layout { grid-template-columns: 1fr; } }

@@ -36,6 +36,17 @@ export interface Category {
   sortOrder: number;
 }
 
+// Promotional banner shown in the home-page carousel (managed in admin).
+export interface Banner {
+  id: string;
+  title: string;
+  subtitle: string;
+  imageUrl: string;
+  linkUrl: string;
+  isActive: boolean;
+  sortOrder: number;
+}
+
 export interface CartItem {
   id: string;
   productId: string;
