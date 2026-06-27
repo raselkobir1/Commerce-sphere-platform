@@ -89,7 +89,6 @@ public static class InfrastructureExtensions
                 Menu.Create("dashboard", "Dashboard", "/dashboard", "📊", 1),
                 Menu.Create("products", "Products", "/products", "🛍️", 2),
                 Menu.Create("categories", "Categories", "/categories", "🏷️", 3),
-                Menu.Create("banners", "Banners", "/banners", "🖼️", 4),
                 Menu.Create("inventory", "Inventory", "/inventory", "📦", 4),
                 Menu.Create("users", "Users", "/users", "👥", 5),
                 Menu.Create("roles", "Roles", "/roles", "🛡️", 6),

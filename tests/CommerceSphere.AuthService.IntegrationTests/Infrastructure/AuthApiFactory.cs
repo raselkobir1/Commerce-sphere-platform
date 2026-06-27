@@ -4,8 +4,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Testcontainers.PostgreSql;
@@ -55,15 +53,14 @@ public sealed class AuthApiFactory : WebApplicationFactory<Program>, IAsyncLifet
         Environment.SetEnvironmentVariable("Email__SmtpHost", "localhost");
         Environment.SetEnvironmentVariable("Email__AppBaseUrl", "http://localhost");
 
-        // Build the schema from the current EF model rather than the migrations. The committed
-        // migration files lack the [Migration]/[DbContext] designer attributes, so EF's scanner
-        // recognises none of them (the running stack is provisioned via raw SQL instead). The
-        // Testcontainers database already exists, so EnsureCreated would no-op — we create the
-        // tables directly, which always matches the model including every security column.
+        // Accessing Services builds the host, which runs Program's startup pipeline:
+        // MigrateAuthDbAsync() applies the committed migrations to the fresh Testcontainers
+        // database (building the full schema, including every RBAC and security column), then
+        // SeedRbacAsync() seeds the default roles/menus/permissions. Both complete before the
+        // first test runs. We verify connectivity here so a setup failure surfaces clearly.
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
-        var creator = (RelationalDatabaseCreator)db.GetService<IDatabaseCreator>();
-        await creator.CreateTablesAsync();
+        await db.Database.CanConnectAsync();
     }
 
     public new async Task DisposeAsync()

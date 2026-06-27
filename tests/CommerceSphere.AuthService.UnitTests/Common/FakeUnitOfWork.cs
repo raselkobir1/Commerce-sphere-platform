@@ -10,9 +10,15 @@ public sealed class FakeUnitOfWork : IUnitOfWork
 {
     public FakeUserRepository UsersStore { get; } = new();
     public FakeRefreshTokenRepository RefreshTokensStore { get; } = new();
+    public FakeRoleRepository RolesStore { get; } = new();
+    public FakeMenuRepository MenusStore { get; } = new();
+    public FakeRoleMenuPermissionRepository PermissionsStore { get; } = new();
 
     public IUserRepository Users => UsersStore;
     public IRefreshTokenRepository RefreshTokens => RefreshTokensStore;
+    public IRoleRepository Roles => RolesStore;
+    public IMenuRepository Menus => MenusStore;
+    public IRoleMenuPermissionRepository Permissions => PermissionsStore;
 
     public int SaveChangesCallCount { get; private set; }
 
@@ -52,6 +58,11 @@ public sealed class FakeUserRepository : IUserRepository
 
     // No-op: the in-memory instance is already the tracked reference.
     public void Update(User user) { }
+
+    public void Remove(User user) => Items.Remove(user);
+
+    public Task<int> CountByRoleAsync(string role, CancellationToken ct = default)
+        => Task.FromResult(Items.Count(u => string.Equals(u.Role, role, StringComparison.OrdinalIgnoreCase)));
 
     public Task<(IEnumerable<User> Users, int TotalCount)> GetPagedAsync(int pageNumber, int pageSize, CancellationToken ct = default)
     {
@@ -97,6 +108,74 @@ public sealed class FakeRefreshTokenRepository : IRefreshTokenRepository
     {
         foreach (var t in Items.Where(t => t.UserId == userId && t.IsActive))
             t.Revoke();
+        return Task.CompletedTask;
+    }
+}
+
+public sealed class FakeRoleRepository : IRoleRepository
+{
+    public List<Role> Items { get; } = [];
+
+    public Task<IReadOnlyList<Role>> GetAllAsync(CancellationToken ct = default)
+        => Task.FromResult((IReadOnlyList<Role>)Items.ToList());
+
+    public Task<Role?> GetByIdAsync(Guid id, CancellationToken ct = default)
+        => Task.FromResult(Items.FirstOrDefault(r => r.Id == id));
+
+    public Task<Role?> GetByNameAsync(string name, CancellationToken ct = default)
+        => Task.FromResult(Items.FirstOrDefault(r => string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase)));
+
+    public Task<bool> ExistsByNameAsync(string name, Guid? excludeId, CancellationToken ct = default)
+        => Task.FromResult(Items.Any(r =>
+            string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase) && (excludeId == null || r.Id != excludeId)));
+
+    public Task AddAsync(Role role, CancellationToken ct = default)
+    {
+        Items.Add(role);
+        return Task.CompletedTask;
+    }
+
+    public void Update(Role role) { }
+    public void Remove(Role role) => Items.Remove(role);
+}
+
+public sealed class FakeMenuRepository : IMenuRepository
+{
+    public List<Menu> Items { get; } = [];
+
+    public Task<IReadOnlyList<Menu>> GetAllAsync(CancellationToken ct = default)
+        => Task.FromResult((IReadOnlyList<Menu>)Items.ToList());
+
+    public Task<Menu?> GetByIdAsync(Guid id, CancellationToken ct = default)
+        => Task.FromResult(Items.FirstOrDefault(m => m.Id == id));
+
+    public Task<bool> ExistsByKeyAsync(string key, Guid? excludeId, CancellationToken ct = default)
+        => Task.FromResult(Items.Any(m =>
+            string.Equals(m.Key, key, StringComparison.OrdinalIgnoreCase) && (excludeId == null || m.Id != excludeId)));
+
+    public Task AddAsync(Menu menu, CancellationToken ct = default)
+    {
+        Items.Add(menu);
+        return Task.CompletedTask;
+    }
+
+    public void Update(Menu menu) { }
+    public void Remove(Menu menu) => Items.Remove(menu);
+}
+
+public sealed class FakeRoleMenuPermissionRepository : IRoleMenuPermissionRepository
+{
+    public List<RoleMenuPermission> Items { get; } = [];
+
+    public Task<List<RoleMenuPermission>> GetByRoleIdAsync(Guid roleId, CancellationToken ct = default)
+        => Task.FromResult(Items.Where(p => p.RoleId == roleId).ToList());
+
+    public Task<IReadOnlyList<RoleMenuPermission>> GetByRoleNameAsync(string roleName, CancellationToken ct = default)
+        => Task.FromResult((IReadOnlyList<RoleMenuPermission>)[]);
+
+    public Task AddAsync(RoleMenuPermission permission, CancellationToken ct = default)
+    {
+        Items.Add(permission);
         return Task.CompletedTask;
     }
 }

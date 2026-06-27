@@ -12,6 +12,7 @@ public sealed class FakeEmailService : IEmailService
     public ConcurrentDictionary<string, string> VerificationTokens { get; } = new();
     public ConcurrentDictionary<string, string> ResetTokens { get; } = new();
     public ConcurrentDictionary<string, string> OtpCodes { get; } = new();
+    public ConcurrentDictionary<string, string> CancelledOrders { get; } = new();
 
     public Task SendEmailVerificationAsync(string toEmail, string toName, string token, CancellationToken ct = default)
     {
@@ -28,6 +29,12 @@ public sealed class FakeEmailService : IEmailService
     public Task SendOtpAsync(string toEmail, string toName, string otpCode, CancellationToken ct = default)
     {
         OtpCodes[toEmail.ToLowerInvariant()] = otpCode;
+        return Task.CompletedTask;
+    }
+
+    public Task SendOrderCancelledAsync(string toEmail, string toName, string orderRef, string reason, CancellationToken ct = default)
+    {
+        CancelledOrders[toEmail.ToLowerInvariant()] = orderRef;
         return Task.CompletedTask;
     }
 }
