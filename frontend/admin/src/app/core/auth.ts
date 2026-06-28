@@ -21,7 +21,8 @@ export class Auth {
 
   // Sign in. Throws a friendly error if the account needs 2FA/OTP (not handled here).
   login(email: string, password: string): Observable<User> {
-    return this.api.post<AuthResult>('/api/auth/login', { email, password }).pipe(
+    // The login page shows its own inline error; success navigates — so no toast either way.
+    return this.api.post<AuthResult>('/api/auth/login', { email, password }, { toastSuccess: false, toastError: false }).pipe(
       map((data) => {
         if (!data?.accessToken) {
           throw new Error('This account requires extra verification, which AdminSphere does not support.');
@@ -35,7 +36,8 @@ export class Auth {
   // Called once at startup to restore the session from the saved token.
   restore(): Observable<User | null> {
     if (!this.token) return of(null);
-    return this.api.get<User>('/api/auth/me').pipe(
+    // Silent session restore on startup — a failed/expired token just logs out, no toast.
+    return this.api.get<User>('/api/auth/me', undefined, { toastError: false }).pipe(
       tap((u) => this.user.set(u)),
       catchError(() => {
         this.logout();

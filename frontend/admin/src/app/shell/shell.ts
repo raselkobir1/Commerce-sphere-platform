@@ -6,12 +6,14 @@ import { Perms } from '../core/perms';
 import { Theme } from '../core/theme';
 import { Notifications } from '../core/notifications';
 import { MenuPermission, Notification } from '../core/models';
+import { ToastHost } from '../shared/toast-host';
 
 // The signed-in layout: icon sidebar + top bar (with the user/appearance menu) + the page.
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, DatePipe],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, DatePipe, ToastHost],
   template: `
+    <app-toast-host />
     <div class="shell">
       <aside class="sidebar">
         <div class="brand"><span class="mark">A</span>Admin<span>Sphere</span></div>

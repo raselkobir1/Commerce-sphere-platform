@@ -49,6 +49,23 @@ export interface Product {
   stock: number;
 }
 
+// A bulk product upload job (Excel import) — created by POST /api/products/import and polled
+// while the backend worker processes it. Status is one of:
+// Pending | Processing | Completed | CompletedWithErrors | Failed.
+export interface BulkImportJob {
+  jobId: string;
+  fileName: string;
+  status: string;
+  totalRows: number;
+  processedRows: number;
+  succeededRows: number;
+  failedRows: number;
+  hasErrorReport: boolean;
+  errorMessage?: string | null;
+  createdAt: string;
+  completedAt?: string | null;
+}
+
 export interface Role {
   id: string;
   name: string;

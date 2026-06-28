@@ -9,12 +9,14 @@ public class ProductDbContext(DbContextOptions<ProductDbContext> options) : DbCo
     public DbSet<Product> Products => Set<Product>();
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<Banner> Banners => Set<Banner>();
+    public DbSet<BulkImportJob> BulkImportJobs => Set<BulkImportJob>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfiguration(new ProductConfiguration());
         modelBuilder.ApplyConfiguration(new CategoryConfiguration());
         modelBuilder.ApplyConfiguration(new BannerConfiguration());
+        modelBuilder.ApplyConfiguration(new BulkImportJobConfiguration());
         base.OnModelCreating(modelBuilder);
     }
 }

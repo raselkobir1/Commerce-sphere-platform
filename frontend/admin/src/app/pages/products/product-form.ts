@@ -139,7 +139,7 @@ export class ProductFormPage implements OnInit {
           price: this.form.price,
           category: this.form.category,
           imageUrl: this.form.imageUrl || null,
-        })
+        }, { toastError: false })
         .subscribe(done);
     } else {
       this.api
@@ -151,7 +151,7 @@ export class ProductFormPage implements OnInit {
           category: this.form.category,
           imageUrl: this.form.imageUrl || null,
           initialStock: this.form.initialStock,
-        })
+        }, { toastError: false })
         .subscribe(done);
     }
   }

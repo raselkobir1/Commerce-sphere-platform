@@ -52,6 +52,7 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<IProductManager, ProductManager>();
 builder.Services.AddScoped<ICategoryManager, CategoryManager>();
 builder.Services.AddScoped<IBannerManager, BannerManager>();
+builder.Services.AddScoped<IProductImportService, ProductImportService>();
 
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<CreateProductRequestValidator>();

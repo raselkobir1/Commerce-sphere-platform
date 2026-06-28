@@ -42,6 +42,44 @@ public class ProductEventProducer(IConfiguration config, ILogger<ProductEventPro
         });
     }
 
+    public Task PublishProductCreatedBatchAsync(IEnumerable<ProductCreatedEvent> events, CancellationToken ct = default)
+    {
+        var count = 0;
+        foreach (var evt in events)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var message = new Message<string, string>
+            {
+                Key = evt.ProductId.ToString(),
+                Value = JsonSerializer.Serialize(evt),
+                Headers = new Headers
+                {
+                    { "event-type", Encoding.UTF8.GetBytes("ProductCreatedEvent") },
+                    { "version", Encoding.UTF8.GetBytes(evt.Version.ToString()) },
+                    { "correlation-id", Encoding.UTF8.GetBytes(evt.CorrelationId) }
+                }
+            };
+
+            // Non-blocking enqueue: the delivery handler only logs failures. Throughput here is
+            // bounded by librdkafka's internal queue, not by per-message await round-trips.
+            _producer.Produce("product-created", message, report =>
+            {
+                if (report.Error.IsError)
+                    logger.LogError(
+                        "Failed to deliver batched ProductCreatedEvent. ProductId: {ProductId}, Reason: {Reason}",
+                        evt.ProductId, report.Error.Reason);
+            });
+            count++;
+        }
+
+        // Block until every queued message has been delivered (or errored) before returning, so the
+        // caller knows the batch is on the broker.
+        _producer.Flush(ct);
+        logger.LogInformation("Flushed {Count} batched ProductCreatedEvent(s).", count);
+        return Task.CompletedTask;
+    }
+
     public async Task PublishProductUpdatedAsync(ProductUpdatedEvent evt, CancellationToken ct = default)
     {
         var policy = ResiliencePolicies.KafkaRetryPolicy(logger);

@@ -25,6 +25,13 @@ public static class InfrastructureExtensions
         services.AddScoped<IProductCacheService, ProductCacheService>();
         services.AddSingleton<IProductEventProducer, ProductEventProducer>();
 
+        // Bulk product import (Excel upload → async background processing via PostgreSQL COPY).
+        services.AddSingleton<IExcelProductParser, Excel.ClosedXmlProductParser>();
+        services.AddSingleton<IBulkImportFileStore, BulkImport.BulkImportFileStore>();
+        services.AddSingleton<IBulkImportQueue, BulkImport.BulkImportQueue>();
+        services.AddScoped<IProductBulkInserter, BulkImport.NpgsqlProductBulkInserter>();
+        services.AddHostedService<BulkImport.BulkImportBackgroundWorker>();
+
         // Keep catalog Stock in sync when carts check out / are cancelled.
         services.AddHostedService<Kafka.Consumers.CartCheckedOutConsumer>();
         services.AddHostedService<Kafka.Consumers.CartCancelledConsumer>();

@@ -11,11 +11,13 @@ public class UnitOfWork(ProductDbContext db) : IUnitOfWork
     private IProductRepository? _products;
     private ICategoryRepository? _categories;
     private IBannerRepository? _banners;
+    private IBulkImportJobRepository? _bulkImportJobs;
     private IDbContextTransaction? _transaction;
 
     public IProductRepository Products => _products ??= new ProductRepository(db);
     public ICategoryRepository Categories => _categories ??= new CategoryRepository(db);
     public IBannerRepository Banners => _banners ??= new BannerRepository(db);
+    public IBulkImportJobRepository BulkImportJobs => _bulkImportJobs ??= new BulkImportJobRepository(db);
 
     public Task<int> SaveChangesAsync(CancellationToken ct = default) => db.SaveChangesAsync(ct);
 

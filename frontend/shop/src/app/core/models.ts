@@ -85,6 +85,7 @@ export interface Order {
 // Backend paginated list envelope (the shop only reads the items).
 export interface Paged<T> {
   items: T[];
+  totalRecords: number;
 }
 
 // Shipping address collected at checkout (frontend-only — the backend checkout takes no address).

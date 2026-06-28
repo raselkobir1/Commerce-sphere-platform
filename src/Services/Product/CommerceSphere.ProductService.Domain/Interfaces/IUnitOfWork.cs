@@ -7,6 +7,7 @@ public interface IUnitOfWork : IDisposable
     IProductRepository Products { get; }
     ICategoryRepository Categories { get; }
     IBannerRepository Banners { get; }
+    IBulkImportJobRepository BulkImportJobs { get; }
     Task<int> SaveChangesAsync(CancellationToken ct = default);
     Task BeginTransactionAsync(CancellationToken ct = default);
     Task CommitTransactionAsync(CancellationToken ct = default);

@@ -12,7 +12,10 @@ import { Pagination } from '../../shared/pagination';
   template: `
     <div class="page-head">
       <div><h1>Products</h1><div class="sub">Tick products, then click Publish / Unpublish · new products start as drafts</div></div>
-      <a class="btn btn-primary" routerLink="/products/new">+ New product</a>
+      <div class="actions">
+        <a class="btn" routerLink="/products/import">⬆ Bulk import</a>
+        <a class="btn btn-primary" routerLink="/products/new">+ New product</a>
+      </div>
     </div>
 
     <div class="toolbar">

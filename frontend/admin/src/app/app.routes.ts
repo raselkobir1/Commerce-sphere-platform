@@ -5,6 +5,7 @@ import { LoginPage } from './pages/login/login';
 import { DashboardPage } from './pages/dashboard/dashboard';
 import { ProductsPage } from './pages/products/products';
 import { ProductFormPage } from './pages/products/product-form';
+import { ProductImportPage } from './pages/products/product-import';
 import { CategoriesPage } from './pages/categories/categories';
 import { BannersPage } from './pages/banners/banners';
 import { UsersPage } from './pages/users/users';
@@ -26,6 +27,7 @@ export const routes: Routes = [
       { path: 'dashboard', component: DashboardPage, canActivate: [canView('dashboard')] },
       { path: 'products', component: ProductsPage, canActivate: [canView('products')] },
       { path: 'products/new', component: ProductFormPage, canActivate: [canView('products')] },
+      { path: 'products/import', component: ProductImportPage, canActivate: [canView('products')] },
       { path: 'products/:id', component: ProductFormPage, canActivate: [canView('products')] },
       { path: 'categories', component: CategoriesPage, canActivate: [canView('categories')] },
       { path: 'banners', component: BannersPage, canActivate: [canView('banners')] },

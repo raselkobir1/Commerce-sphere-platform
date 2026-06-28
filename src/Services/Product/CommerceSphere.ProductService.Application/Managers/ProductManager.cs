@@ -121,6 +121,9 @@ public class ProductManager(
             request.Category,
             request.SearchTerm,
             request.PublishedOnly,
+            request.MaxPrice,
+            request.InStockOnly,
+            request.SortBy,
             ct);
 
         return PagedResult<ProductResponse>.Create(

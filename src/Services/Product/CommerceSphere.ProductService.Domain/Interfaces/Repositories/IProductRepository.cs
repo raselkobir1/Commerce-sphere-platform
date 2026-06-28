@@ -15,5 +15,8 @@ public interface IProductRepository
         string? category,
         string? searchTerm,
         bool publishedOnly,
+        decimal? maxPrice,
+        bool inStockOnly,
+        string? sortBy,
         CancellationToken ct = default);
 }
