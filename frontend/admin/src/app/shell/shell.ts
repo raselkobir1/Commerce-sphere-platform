@@ -78,10 +78,9 @@ import { MenuPermission, Notification } from '../core/models';
                     </div>
                     <div class="notif-foot">
                       <button class="btn btn-sm" (click)="selectAll()">Select all</button>
-                      <button class="btn btn-sm btn-primary" [disabled]="selectedCount() === 0" (click)="submitSelected()">
-                        Mark read @if (selectedCount()) { ({{ selectedCount() }}) }
+                      <button class="btn btn-sm btn-primary" (click)="markReadAction()">
+                        @if (selectedCount()) { Mark read ({{ selectedCount() }}) } @else { Mark all read }
                       </button>
-                      <button class="btn btn-sm" (click)="readAll()">Read all</button>
                     </div>
                   }
                 </div>
@@ -181,14 +180,10 @@ export class Shell implements OnInit {
     this.checked.set(new Set(this.notifications.items().map((n) => n.id)));
   }
 
-  // Mark only the ticked notifications read; the badge drops by that many.
-  submitSelected(): void {
-    this.notifications.markRead([...this.checked()]);
-    this.checked.set(new Set());
-  }
-
-  readAll(): void {
-    this.notifications.markAllRead();
+  // One adaptive action: with items ticked, mark just those read; with none ticked, mark all read.
+  markReadAction(): void {
+    if (this.selectedCount() > 0) this.notifications.markRead([...this.checked()]);
+    else this.notifications.markAllRead();
     this.checked.set(new Set());
   }
 
