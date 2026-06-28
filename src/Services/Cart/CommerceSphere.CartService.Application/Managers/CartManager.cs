@@ -205,7 +205,8 @@ public class CartManager(
                 throw new BusinessException($"This order can't be cancelled (current status: {cart.Status}).");
         }
 
-        cart.Cancel();
+        var note = string.IsNullOrWhiteSpace(reason) ? "Cancelled" : reason.Trim();
+        cart.Cancel(note);
 
         // Snapshot items before saving so the event carries what to restock / email about.
         var snapshots = cart.Items
@@ -315,6 +316,10 @@ public class CartManager(
             i.Quantity * i.UnitPrice,
             i.AddedAt));
 
+        var history = cart.StatusHistory
+            .OrderBy(h => h.CreatedAt)
+            .Select(h => new OrderStatusEntryResponse(h.Status, h.Note, h.CreatedAt));
+
         return new CartResponse(
             cart.Id,
             cart.UserId,
@@ -323,6 +328,7 @@ public class CartManager(
             cart.TotalAmount,
             cart.ItemCount,
             cart.CreatedAt,
-            cart.UpdatedAt);
+            cart.UpdatedAt,
+            history);
     }
 }

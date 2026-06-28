@@ -11,6 +11,7 @@ public class CartRepository(CartDbContext context) : ICartRepository
     {
         return await context.Carts
             .Include(c => c.Items)
+            .Include(c => c.StatusHistory)
             .FirstOrDefaultAsync(c => c.Id == id, ct);
     }
 
@@ -63,6 +64,7 @@ public class CartRepository(CartDbContext context) : ICartRepository
     public async Task<IReadOnlyList<Cart>> GetOrdersAsync(CancellationToken ct = default) =>
         await context.Carts
             .Include(c => c.Items)
+            .Include(c => c.StatusHistory)
             .AsNoTracking()
             .Where(c => OrderStatuses.Contains(c.Status))
             .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt)
@@ -71,6 +73,7 @@ public class CartRepository(CartDbContext context) : ICartRepository
     public async Task<IReadOnlyList<Cart>> GetOrdersByUserAsync(Guid userId, CancellationToken ct = default) =>
         await context.Carts
             .Include(c => c.Items)
+            .Include(c => c.StatusHistory)
             .AsNoTracking()
             .Where(c => c.UserId == userId && OrderStatuses.Contains(c.Status))
             .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt)

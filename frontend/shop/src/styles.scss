@@ -85,6 +85,18 @@ img { max-width: 100%; display: block; }
 .carousel .dot { width: 10px; height: 10px; border-radius: 50%; border: 0; padding: 0; background: rgba(255,255,255,.5); cursor: pointer; transition: background .15s, transform .15s; }
 .carousel .dot.on { background: #fff; transform: scale(1.25); }
 
+/* ───── Order tracking timeline ───── */
+.track { margin: 14px 0 4px; padding: 14px 4px 4px; border-top: 1px solid var(--line); }
+.track-step { position: relative; display: flex; gap: 12px; padding: 0 0 16px 6px; }
+.track-step::before { content: ""; position: absolute; left: 11px; top: 14px; bottom: -2px; width: 2px; background: var(--line); }
+.track-step.last::before { display: none; }
+.track-dot { flex-shrink: 0; width: 12px; height: 12px; margin-top: 3px; border-radius: 50%; background: var(--accent, #16a34a); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #16a34a) 20%, transparent); z-index: 1; }
+.track-dot.cancel { background: var(--red, #e5484d); box-shadow: 0 0 0 3px color-mix(in srgb, var(--red, #e5484d) 20%, transparent); }
+.track-info { min-width: 0; }
+.track-status { font-weight: 700; font-size: 14px; }
+.track-note { font-size: 13px; color: var(--muted); }
+.track-time { font-size: 12px; color: var(--muted); margin-top: 1px; }
+
 /* ───── Catalogue layout ───── */
 .shop-layout { display: grid; grid-template-columns: 248px 1fr; gap: 26px; align-items: start; }
 @media (max-width: 860px) { .shop-layout { grid-template-columns: 1fr; } }

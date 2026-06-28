@@ -17,10 +17,18 @@ public class Cart : BaseEntity
     // The public Items property exposes a read-only view so callers cannot mutate the collection directly.
     private readonly List<CartItem> _items = [];
 
+    // Append-only timeline of status changes, for customer order tracking.
+    private readonly List<OrderStatusEntry> _statusHistory = [];
+
     public Guid UserId { get; private set; }
     public CartStatus Status { get; private set; } = CartStatus.Active;
     public string? IdempotencyKey { get; private set; }
     public ICollection<CartItem> Items => _items.AsReadOnly();
+    public ICollection<OrderStatusEntry> StatusHistory => _statusHistory.AsReadOnly();
+
+    // Records the current status into the timeline. Called by each transition below.
+    private void RecordStatus(string? note = null) =>
+        _statusHistory.Add(OrderStatusEntry.Create(Id, Status.ToString(), note));
 
     // Computed on-the-fly from items so it is always consistent with actual cart contents.
     public decimal TotalAmount => _items.Sum(i => i.UnitPrice * i.Quantity);
@@ -83,12 +91,14 @@ public class Cart : BaseEntity
     public void Checkout()
     {
         Status = CartStatus.CheckedOut;
+        RecordStatus("Order placed");
         SetUpdated();
     }
 
     public void Rollback(string reason)
     {
         Status = CartStatus.RolledBack;
+        RecordStatus(reason);
         SetUpdated();
     }
 
@@ -102,6 +112,7 @@ public class Cart : BaseEntity
     public void Confirm()
     {
         Status = CartStatus.Confirmed;
+        RecordStatus("Confirmed by store");
         SetUpdated();
     }
 
@@ -109,13 +120,15 @@ public class Cart : BaseEntity
     public void Ship()
     {
         Status = CartStatus.Shipped;
+        RecordStatus("Shipped");
         SetUpdated();
     }
 
     // Cancels an order (the manager enforces who may cancel at which status).
-    public void Cancel()
+    public void Cancel(string? note = null)
     {
         Status = CartStatus.Cancelled;
+        RecordStatus(note);
         SetUpdated();
     }
 

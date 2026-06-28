@@ -63,6 +63,13 @@ export interface Cart {
   itemCount: number;
 }
 
+// One step in an order's status timeline (for tracking).
+export interface OrderStatusEntry {
+  status: string;
+  note?: string | null;
+  createdAt: string;
+}
+
 // A past order (checked-out / cancelled cart) for the customer's history.
 export interface Order {
   id: string;
@@ -72,6 +79,7 @@ export interface Order {
   itemCount: number;
   createdAt: string;
   updatedAt?: string | null;
+  statusHistory?: OrderStatusEntry[];
 }
 
 // Backend paginated list envelope (the shop only reads the items).

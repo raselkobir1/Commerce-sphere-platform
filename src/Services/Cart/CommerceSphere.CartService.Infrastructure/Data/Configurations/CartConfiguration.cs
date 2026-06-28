@@ -52,5 +52,10 @@ public class CartConfiguration : IEntityTypeConfiguration<Cart>
             .WithOne()
             .HasForeignKey(i => i.CartId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(c => c.StatusHistory)
+            .WithOne()
+            .HasForeignKey(e => e.CartId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

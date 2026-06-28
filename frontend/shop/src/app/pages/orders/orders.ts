@@ -24,12 +24,15 @@ import { Order } from '../../core/models';
                 <strong>Order #{{ o.id.slice(0, 8).toUpperCase() }}</strong>
                 <div class="muted" style="font-size:13px">{{ (o.updatedAt || o.createdAt) | date: 'medium' }}</div>
               </div>
-              <div style="display:flex; align-items:center; gap:10px">
+              <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
                 <span class="pill"
                       [class.in]="o.status === 'CheckedOut' || o.status === 'Confirmed' || o.status === 'Shipped'"
                       [class.out]="o.status === 'Cancelled'">
-                  {{ o.status === 'CheckedOut' ? 'Placed' : o.status }}
+                  {{ statusLabel(o.status) }}
                 </span>
+                <button class="btn btn-sm" (click)="track(o.id)">
+                  {{ trackingId() === o.id ? 'Hide tracking' : 'Track order' }}
+                </button>
                 @if (o.status === 'CheckedOut') {
                   <button class="btn btn-sm" [disabled]="cancelling() === o.id" (click)="cancel(o)">
                     {{ cancelling() === o.id ? 'Cancelling…' : 'Cancel order' }}
@@ -37,6 +40,25 @@ import { Order } from '../../core/models';
                 }
               </div>
             </div>
+
+            @if (trackingId() === o.id) {
+              <div class="track">
+                @for (h of (o.statusHistory ?? []); track $index) {
+                  <div class="track-step" [class.last]="$last">
+                    <span class="track-dot" [class.cancel]="h.status === 'Cancelled'"></span>
+                    <div class="track-info">
+                      <div class="track-status">{{ statusLabel(h.status) }}</div>
+                      @if (h.note) { <div class="track-note">{{ h.note }}</div> }
+                      <div class="track-time">{{ h.createdAt | date: 'medium' }}</div>
+                    </div>
+                  </div>
+                }
+                @if (!(o.statusHistory && o.statusHistory.length)) {
+                  <div class="muted">No tracking details yet.</div>
+                }
+              </div>
+            }
+
             <div class="order-lines">
               @for (item of o.items; track item.id) {
                 <div class="l"><span>{{ item.productName }} <span class="muted">× {{ item.quantity }}</span></span><span>{{ item.lineTotal | bdt }}</span></div>
@@ -57,8 +79,13 @@ export class OrdersPage implements OnInit {
   orders = signal<Order[]>([]);
   loading = signal(false);
   cancelling = signal<string | null>(null);
+  trackingId = signal<string | null>(null);
 
   ngOnInit(): void { this.load(); }
+
+  track(id: string): void { this.trackingId.set(this.trackingId() === id ? null : id); }
+
+  statusLabel(s: string): string { return s === 'CheckedOut' ? 'Placed' : s; }
 
   load(): void {
     this.loading.set(true);

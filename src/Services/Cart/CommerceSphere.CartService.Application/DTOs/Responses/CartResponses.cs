@@ -10,6 +10,11 @@ public record CartItemResponse(
     decimal LineTotal,
     DateTime AddedAt);
 
+public record OrderStatusEntryResponse(
+    string Status,
+    string? Note,
+    DateTime CreatedAt);
+
 public record CartResponse(
     Guid Id,
     Guid UserId,
@@ -18,4 +23,5 @@ public record CartResponse(
     decimal TotalAmount,
     int ItemCount,
     DateTime CreatedAt,
-    DateTime? UpdatedAt);
+    DateTime? UpdatedAt,
+    IEnumerable<OrderStatusEntryResponse> StatusHistory);
