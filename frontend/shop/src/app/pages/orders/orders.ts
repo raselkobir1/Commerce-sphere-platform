@@ -25,7 +25,9 @@ import { Order } from '../../core/models';
                 <div class="muted" style="font-size:13px">{{ (o.updatedAt || o.createdAt) | date: 'medium' }}</div>
               </div>
               <div style="display:flex; align-items:center; gap:10px">
-                <span class="pill" [class.in]="o.status === 'CheckedOut'" [class.out]="o.status === 'Cancelled'">
+                <span class="pill"
+                      [class.in]="o.status === 'CheckedOut' || o.status === 'Confirmed' || o.status === 'Shipped'"
+                      [class.out]="o.status === 'Cancelled'">
                   {{ o.status === 'CheckedOut' ? 'Placed' : o.status }}
                 </span>
                 @if (o.status === 'CheckedOut') {

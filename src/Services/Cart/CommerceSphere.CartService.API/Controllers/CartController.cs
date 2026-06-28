@@ -35,7 +35,30 @@ public class CartController(ICartManager cartManager) : ControllerBase
         return Ok(ApiResponse<object>.Ok(result, "Orders retrieved", HttpContext.TraceIdentifier, HttpContext.GetCorrelationId()));
     }
 
-    // Admin cancels a placed order → restocks inventory + emails the customer + alerts admins.
+    // Admin confirms a placed order (CheckedOut → Confirmed). After this the customer can no
+    // longer cancel it themselves.
+    [HttpPost("orders/{cartId:guid}/confirm")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ConfirmOrder(Guid cartId, CancellationToken ct)
+    {
+        var result = await cartManager.ConfirmOrderAsync(cartId, ct);
+        return Ok(ApiResponse<object>.Ok(result, "Order confirmed", HttpContext.TraceIdentifier, HttpContext.GetCorrelationId()));
+    }
+
+    // Admin ships a confirmed order (Confirmed → Shipped).
+    [HttpPost("orders/{cartId:guid}/ship")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ShipOrder(Guid cartId, CancellationToken ct)
+    {
+        var result = await cartManager.ShipOrderAsync(cartId, ct);
+        return Ok(ApiResponse<object>.Ok(result, "Order shipped", HttpContext.TraceIdentifier, HttpContext.GetCorrelationId()));
+    }
+
+    // Admin cancels an order at any open status → restocks inventory + emails the customer + alerts admins.
     [HttpPost("orders/{cartId:guid}/cancel")]
     [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]

@@ -143,7 +143,37 @@ public class CartManager(
         return orders.Select(MapToResponse).ToList();
     }
 
-    // Admin cancel — may cancel any order.
+    // Admin confirms a placed order (CheckedOut → Confirmed).
+    public async Task<CartResponse> ConfirmOrderAsync(Guid cartId, CancellationToken ct = default)
+    {
+        var cart = await uow.Carts.GetByIdAsync(cartId, ct)
+            ?? throw new NotFoundException(nameof(Cart), cartId);
+        if (cart.Status != CartStatus.CheckedOut)
+            throw new BusinessException($"Only placed orders can be confirmed (current status: {cart.Status}).");
+
+        cart.Confirm();
+        await uow.SaveChangesAsync(ct);
+        await cacheService.RemoveCartAsync(cart.Id);
+        logger.LogInformation("Order {CartId} confirmed by admin.", cart.Id);
+        return MapToResponse(cart);
+    }
+
+    // Admin ships a confirmed order (Confirmed → Shipped).
+    public async Task<CartResponse> ShipOrderAsync(Guid cartId, CancellationToken ct = default)
+    {
+        var cart = await uow.Carts.GetByIdAsync(cartId, ct)
+            ?? throw new NotFoundException(nameof(Cart), cartId);
+        if (cart.Status != CartStatus.Confirmed)
+            throw new BusinessException($"Only confirmed orders can be shipped (current status: {cart.Status}).");
+
+        cart.Ship();
+        await uow.SaveChangesAsync(ct);
+        await cacheService.RemoveCartAsync(cart.Id);
+        logger.LogInformation("Order {CartId} shipped by admin.", cart.Id);
+        return MapToResponse(cart);
+    }
+
+    // Admin cancel — may cancel any open order.
     public Task<CartResponse> CancelOrderAsync(Guid cartId, string reason, string correlationId, CancellationToken ct = default)
         => CancelInternalAsync(cartId, null, reason, correlationId, ct);
 
@@ -156,12 +186,24 @@ public class CartManager(
         var cart = await uow.Carts.GetByIdAsync(cartId, ct)
             ?? throw new NotFoundException(nameof(Cart), cartId);
 
+        var isCustomer = requireUserId is not null;
+
         // Ownership guard for the customer path — you can only cancel your own orders.
-        if (requireUserId is not null && cart.UserId != requireUserId.Value)
+        if (isCustomer && cart.UserId != requireUserId!.Value)
             throw new BusinessException("You can only cancel your own orders.");
 
-        if (cart.Status != CartStatus.CheckedOut)
-            throw new BusinessException($"Only checked-out orders can be cancelled (current status: {cart.Status}).");
+        if (isCustomer)
+        {
+            // Customers may cancel only before the admin has acted on the order.
+            if (cart.Status != CartStatus.CheckedOut)
+                throw new BusinessException("This order is already being processed and can no longer be cancelled. Please contact support.");
+        }
+        else
+        {
+            // Admin may cancel any open order (placed / confirmed / shipped).
+            if (cart.Status is not (CartStatus.CheckedOut or CartStatus.Confirmed or CartStatus.Shipped))
+                throw new BusinessException($"This order can't be cancelled (current status: {cart.Status}).");
+        }
 
         cart.Cancel();
 

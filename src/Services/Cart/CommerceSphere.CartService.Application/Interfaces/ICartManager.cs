@@ -13,6 +13,8 @@ public interface ICartManager
     Task<CartResponse> GetCartByUserIdAsync(Guid userId, CancellationToken ct = default);
     Task<IReadOnlyList<CartResponse>> GetOrdersAsync(CancellationToken ct = default);
     Task<IReadOnlyList<CartResponse>> GetUserOrdersAsync(Guid userId, CancellationToken ct = default);
+    Task<CartResponse> ConfirmOrderAsync(Guid cartId, CancellationToken ct = default);
+    Task<CartResponse> ShipOrderAsync(Guid cartId, CancellationToken ct = default);
     Task<CartResponse> CancelOrderAsync(Guid cartId, string reason, string correlationId, CancellationToken ct = default);
     // Customer-initiated cancel — only succeeds if the order belongs to userId.
     Task<CartResponse> CancelOwnOrderAsync(Guid cartId, Guid userId, string reason, string correlationId, CancellationToken ct = default);

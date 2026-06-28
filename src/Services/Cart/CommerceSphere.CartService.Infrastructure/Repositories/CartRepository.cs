@@ -56,11 +56,15 @@ public class CartRepository(CartDbContext context) : ICartRepository
         return (items, totalCount);
     }
 
+    // "Orders" = any cart that has progressed past the active shopping state.
+    private static readonly CartStatus[] OrderStatuses =
+        [CartStatus.CheckedOut, CartStatus.Confirmed, CartStatus.Shipped, CartStatus.Cancelled];
+
     public async Task<IReadOnlyList<Cart>> GetOrdersAsync(CancellationToken ct = default) =>
         await context.Carts
             .Include(c => c.Items)
             .AsNoTracking()
-            .Where(c => c.Status == CartStatus.CheckedOut || c.Status == CartStatus.Cancelled)
+            .Where(c => OrderStatuses.Contains(c.Status))
             .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt)
             .ToListAsync(ct);
 
@@ -68,7 +72,7 @@ public class CartRepository(CartDbContext context) : ICartRepository
         await context.Carts
             .Include(c => c.Items)
             .AsNoTracking()
-            .Where(c => c.UserId == userId && (c.Status == CartStatus.CheckedOut || c.Status == CartStatus.Cancelled))
+            .Where(c => c.UserId == userId && OrderStatuses.Contains(c.Status))
             .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt)
             .ToListAsync(ct);
 }

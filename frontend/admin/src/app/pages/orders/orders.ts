@@ -35,13 +35,23 @@ import { Pagination } from '../../shared/pagination';
                   <td class="cell-main">{{ o.totalAmount | currency: 'BDT' : '৳' }}</td>
                   <td class="muted">{{ (o.updatedAt || o.createdAt) | date: 'medium' }}</td>
                   <td>
-                    <span class="badge" [class.on]="o.status === 'CheckedOut'" [class.off]="o.status !== 'CheckedOut'">{{ o.status }}</span>
+                    <span class="badge" [class.on]="o.status === 'Confirmed' || o.status === 'Shipped'"
+                          [class.off]="o.status === 'Cancelled'" [class.low]="o.status === 'CheckedOut'">
+                      {{ o.status === 'CheckedOut' ? 'Placed' : o.status }}
+                    </span>
                   </td>
-                  <td class="right">
-                    @if (o.status === 'CheckedOut' && perms.can('orders', 'edit')) {
-                      <button class="btn btn-sm btn-danger" (click)="cancel(o, $event)">Cancel</button>
+                  <td class="right"><div class="actions">
+                    @if (perms.can('orders', 'edit')) {
+                      @if (o.status === 'CheckedOut') {
+                        <button class="btn btn-sm" (click)="confirm(o, $event)">Confirm</button>
+                      } @else if (o.status === 'Confirmed') {
+                        <button class="btn btn-sm" (click)="ship(o, $event)">Ship</button>
+                      }
+                      @if (o.status === 'CheckedOut' || o.status === 'Confirmed' || o.status === 'Shipped') {
+                        <button class="btn btn-sm btn-danger" (click)="cancel(o, $event)">Cancel</button>
+                      } @else { <span class="muted">—</span> }
                     } @else { <span class="muted">—</span> }
-                  </td>
+                  </div></td>
                 </tr>
                 @if (expandedId() === o.id) {
                   <tr>
@@ -103,6 +113,22 @@ export class OrdersPage implements OnInit {
   }
 
   toggle(id: string): void { this.expandedId.set(this.expandedId() === id ? null : id); }
+
+  confirm(o: Order, e: Event): void {
+    e.stopPropagation();
+    this.api.post(`/api/carts/orders/${o.id}/confirm`).subscribe({
+      next: () => this.reload(),
+      error: (err) => alert(err?.error?.message ?? 'Could not confirm the order.'),
+    });
+  }
+
+  ship(o: Order, e: Event): void {
+    e.stopPropagation();
+    this.api.post(`/api/carts/orders/${o.id}/ship`).subscribe({
+      next: () => this.reload(),
+      error: (err) => alert(err?.error?.message ?? 'Could not ship the order.'),
+    });
+  }
 
   // When arriving from a notification (?order=<id>), jump to that order's page and expand it.
   private focusOrderFromQuery(): void {

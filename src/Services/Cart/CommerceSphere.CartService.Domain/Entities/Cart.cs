@@ -3,7 +3,9 @@ namespace CommerceSphere.CartService.Domain.Entities;
 public enum CartStatus
 {
     Active,
-    CheckedOut,
+    CheckedOut,   // order placed by the customer, awaiting admin action
+    Confirmed,    // admin accepted the order
+    Shipped,      // admin shipped the order
     Abandoned,
     RolledBack,
     Cancelled
@@ -96,7 +98,21 @@ public class Cart : BaseEntity
         SetUpdated();
     }
 
-    // Admin cancels a placed order (the manager enforces that only checked-out orders qualify).
+    // Admin confirms a placed order (manager enforces it must be CheckedOut).
+    public void Confirm()
+    {
+        Status = CartStatus.Confirmed;
+        SetUpdated();
+    }
+
+    // Admin ships a confirmed order (manager enforces it must be Confirmed).
+    public void Ship()
+    {
+        Status = CartStatus.Shipped;
+        SetUpdated();
+    }
+
+    // Cancels an order (the manager enforces who may cancel at which status).
     public void Cancel()
     {
         Status = CartStatus.Cancelled;
