@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { Auth } from '../core/auth';
@@ -93,6 +93,7 @@ import { ToastHost } from '../shared/toast-host';
               <button class="menu-trigger" (click)="menuOpen.set(!menuOpen())">
                 <span class="avatar sm">{{ initials() }}</span>
                 <span class="nm">{{ auth.user()?.firstName }}</span>
+                @if (auth.user()?.role) { <span class="role-chip">{{ auth.user()?.role }}</span> }
                 <span class="chev">▾</span>
               </button>
 
@@ -104,6 +105,7 @@ import { ToastHost } from '../shared/toast-host';
                     <div>
                       <div class="nm">{{ auth.user()?.firstName }} {{ auth.user()?.lastName }}</div>
                       <div class="em">{{ auth.user()?.email }}</div>
+                      @if (auth.user()?.role) { <span class="role-chip" style="margin-top:6px">{{ auth.user()?.role }}</span> }
                     </div>
                   </div>
 
@@ -145,13 +147,27 @@ import { ToastHost } from '../shared/toast-host';
       </div>
     </div>
   `,
+  styles: [
+    `
+      .role-chip {
+        display: inline-block; padding: 1px 8px; border-radius: 999px;
+        background: var(--accent, #4f46e5); color: #fff;
+        font-size: 11px; font-weight: 600; line-height: 1.6; letter-spacing: 0.2px;
+      }
+    `,
+  ],
 })
-export class Shell implements OnInit {
+export class Shell implements OnInit, OnDestroy {
   auth = inject(Auth);
   perms = inject(Perms);
   theme = inject(Theme);
   notifications = inject(Notifications);
   private router = inject(Router);
+
+  // Periodically refresh the token + reload the permission matrix, so role/permission changes
+  // made by an admin take effect for a signed-in user without a manual re-login.
+  private static readonly RefreshIntervalMs = 10 * 60 * 1000; // 10 minutes
+  private refreshTimer?: ReturnType<typeof setInterval>;
 
   menuOpen = signal(false);
   notifOpen = signal(false);
@@ -163,6 +179,16 @@ export class Shell implements OnInit {
   ngOnInit(): void {
     // The shell only renders for signed-in admins, so this is the right place to go live.
     this.notifications.init();
+
+    this.refreshTimer = setInterval(() => {
+      this.auth.refresh().subscribe((token) => {
+        if (token) this.perms.load().subscribe(); // pull the latest menus/permissions
+      });
+    }, Shell.RefreshIntervalMs);
+  }
+
+  ngOnDestroy(): void {
+    if (this.refreshTimer) clearInterval(this.refreshTimer);
   }
 
   // Opening/closing the panel no longer auto-reads — the admin picks which to mark read.

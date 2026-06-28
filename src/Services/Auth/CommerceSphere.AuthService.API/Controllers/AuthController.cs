@@ -3,6 +3,7 @@ using CommerceSphere.AuthService.Application.DTOs.Responses;
 using CommerceSphere.AuthService.Application.Interfaces;
 using CommerceSphere.Shared.Common.Authorization;
 using CommerceSphere.Shared.Common.Correlation;
+using CommerceSphere.Shared.Common.Exceptions;
 using CommerceSphere.Shared.Common.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -126,7 +127,11 @@ public class AuthController(IAuthManager authManager) : ControllerBase
         return Ok(ApiResponse.Ok("User deleted", HttpContext.TraceIdentifier, HttpContext.GetCorrelationId()));
     }
 
-    private Guid GetUserId() =>
-        Guid.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-            ?? User.FindFirst("sub")?.Value ?? throw new UnauthorizedAccessException());
+    private Guid GetUserId()
+    {
+        var raw = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+            ?? User.FindFirst("sub")?.Value;
+        // A missing or malformed subject claim is a bad token → 401, not a 500.
+        return Guid.TryParse(raw, out var id) ? id : throw new UnauthorizedException("Invalid token subject.");
+    }
 }

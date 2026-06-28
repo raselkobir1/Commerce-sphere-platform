@@ -38,10 +38,12 @@ import { MenuPermission, Role } from '../../core/models';
                     @if (row.parentId) { <span class="muted" style="margin-right:4px">↳</span> }
                     <span class="nav-emoji" style="margin-right:6px">{{ row.icon }}</span>{{ row.label }}
                   </td>
-                  <td class="ctr"><input type="checkbox" [(ngModel)]="row.canView" /></td>
-                  <td class="ctr"><input type="checkbox" [(ngModel)]="row.canCreate" /></td>
-                  <td class="ctr"><input type="checkbox" [(ngModel)]="row.canEdit" /></td>
-                  <td class="ctr"><input type="checkbox" [(ngModel)]="row.canDelete" /></td>
+                  <td class="ctr"><input type="checkbox" [(ngModel)]="row.canView"
+                        [disabled]="row.canCreate || row.canEdit || row.canDelete"
+                        [title]="(row.canCreate || row.canEdit || row.canDelete) ? 'View is required by the selected actions' : ''" /></td>
+                  <td class="ctr"><input type="checkbox" [(ngModel)]="row.canCreate" (ngModelChange)="ensureView(row)" /></td>
+                  <td class="ctr"><input type="checkbox" [(ngModel)]="row.canEdit" (ngModelChange)="ensureView(row)" /></td>
+                  <td class="ctr"><input type="checkbox" [(ngModel)]="row.canDelete" (ngModelChange)="ensureView(row)" /></td>
                 </tr>
               }
             </tbody>
@@ -65,6 +67,12 @@ export class PermissionsPage implements OnInit {
 
   ngOnInit(): void {
     this.api.get<Role[]>('/api/auth/roles').subscribe((r) => this.roles.set(r));
+  }
+
+  // View is implied by any action: you can't act on a menu you can't see, and the admin guard
+  // requires at least one viewable menu — so checking Create/Edit/Delete auto-enables View.
+  ensureView(row: MenuPermission): void {
+    if (row.canCreate || row.canEdit || row.canDelete) row.canView = true;
   }
 
   loadPerms(): void {
