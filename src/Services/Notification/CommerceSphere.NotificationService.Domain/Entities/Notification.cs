@@ -16,20 +16,21 @@ public class Notification : BaseEntity
     private Notification() { }
 
     public static Notification OrderPlaced(Guid orderId, Guid userId, decimal amount, int itemCount) =>
-        Build("OrderPlaced", "New order placed", orderId, userId, amount, itemCount);
+        Build("OrderPlaced", "New order placed", orderId, userId, amount, itemCount, null);
 
-    public static Notification OrderCancelled(Guid orderId, Guid userId, decimal amount, int itemCount) =>
-        Build("OrderCancelled", "Order cancelled", orderId, userId, amount, itemCount);
+    public static Notification OrderCancelled(Guid orderId, Guid userId, decimal amount, int itemCount, string? reason = null) =>
+        Build("OrderCancelled", "Order cancelled", orderId, userId, amount, itemCount, reason);
 
-    private static Notification Build(string type, string title, Guid orderId, Guid userId, decimal amount, int itemCount)
+    private static Notification Build(string type, string title, Guid orderId, Guid userId, decimal amount, int itemCount, string? reason)
     {
         var reference = orderId.ToString("N")[..8].ToUpperInvariant();
         var verb = type == "OrderCancelled" ? "cancelled" : "placed";
+        var suffix = string.IsNullOrWhiteSpace(reason) ? "" : $" — {reason}";
         return new Notification
         {
             Type = type,
             Title = title,
-            Message = $"Order #{reference} {verb} · ৳{amount:N0} · {itemCount} item(s)",
+            Message = $"Order #{reference} {verb} · ৳{amount:N0} · {itemCount} item(s){suffix}",
             OrderId = orderId,
             UserId = userId,
             Amount = amount,

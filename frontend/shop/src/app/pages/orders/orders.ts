@@ -24,9 +24,16 @@ import { Order } from '../../core/models';
                 <strong>Order #{{ o.id.slice(0, 8).toUpperCase() }}</strong>
                 <div class="muted" style="font-size:13px">{{ (o.updatedAt || o.createdAt) | date: 'medium' }}</div>
               </div>
-              <span class="pill" [class.in]="o.status === 'CheckedOut'" [class.out]="o.status === 'Cancelled'">
-                {{ o.status === 'CheckedOut' ? 'Placed' : o.status }}
-              </span>
+              <div style="display:flex; align-items:center; gap:10px">
+                <span class="pill" [class.in]="o.status === 'CheckedOut'" [class.out]="o.status === 'Cancelled'">
+                  {{ o.status === 'CheckedOut' ? 'Placed' : o.status }}
+                </span>
+                @if (o.status === 'CheckedOut') {
+                  <button class="btn btn-sm" [disabled]="cancelling() === o.id" (click)="cancel(o)">
+                    {{ cancelling() === o.id ? 'Cancelling…' : 'Cancel order' }}
+                  </button>
+                }
+              </div>
             </div>
             <div class="order-lines">
               @for (item of o.items; track item.id) {
@@ -47,12 +54,24 @@ export class OrdersPage implements OnInit {
 
   orders = signal<Order[]>([]);
   loading = signal(false);
+  cancelling = signal<string | null>(null);
 
-  ngOnInit(): void {
+  ngOnInit(): void { this.load(); }
+
+  load(): void {
     this.loading.set(true);
     this.api.get<Order[]>('/api/carts/my-orders').subscribe({
       next: (o) => { this.orders.set(o); this.loading.set(false); },
       error: () => this.loading.set(false),
+    });
+  }
+
+  cancel(o: Order): void {
+    if (!confirm(`Cancel order #${o.id.slice(0, 8).toUpperCase()}? Any reserved stock is released and the store team is notified.`)) return;
+    this.cancelling.set(o.id);
+    this.api.post(`/api/carts/my-orders/${o.id}/cancel`, { reason: 'Cancelled by customer' }).subscribe({
+      next: () => { this.cancelling.set(null); this.load(); },
+      error: (e) => { this.cancelling.set(null); alert(e?.error?.message ?? 'Could not cancel the order.'); },
     });
   }
 }

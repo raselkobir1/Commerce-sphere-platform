@@ -35,7 +35,7 @@ public class CartController(ICartManager cartManager) : ControllerBase
         return Ok(ApiResponse<object>.Ok(result, "Orders retrieved", HttpContext.TraceIdentifier, HttpContext.GetCorrelationId()));
     }
 
-    // Admin cancels a placed order → restocks inventory + emails the customer.
+    // Admin cancels a placed order → restocks inventory + emails the customer + alerts admins.
     [HttpPost("orders/{cartId:guid}/cancel")]
     [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
@@ -43,7 +43,21 @@ public class CartController(ICartManager cartManager) : ControllerBase
     public async Task<IActionResult> CancelOrder(Guid cartId, [FromBody] CancelOrderRequest? request, CancellationToken ct)
     {
         var correlationId = HttpContext.GetCorrelationId();
-        var result = await cartManager.CancelOrderAsync(cartId, request?.Reason ?? "", correlationId, ct);
+        var reason = string.IsNullOrWhiteSpace(request?.Reason) ? "Cancelled by admin" : request!.Reason!;
+        var result = await cartManager.CancelOrderAsync(cartId, reason, correlationId, ct);
+        return Ok(ApiResponse<object>.Ok(result, "Order cancelled", HttpContext.TraceIdentifier, correlationId));
+    }
+
+    // Customer cancels their OWN placed order → same downstream effects (restock + emails + admin alert).
+    // The cart's owner is verified against the caller's token, so one customer can't cancel another's order.
+    [HttpPost("my-orders/{cartId:guid}/cancel")]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> CancelMyOrder(Guid cartId, [FromBody] CancelOrderRequest? request, CancellationToken ct)
+    {
+        var correlationId = HttpContext.GetCorrelationId();
+        var reason = string.IsNullOrWhiteSpace(request?.Reason) ? "Cancelled by customer" : request!.Reason!;
+        var result = await cartManager.CancelOwnOrderAsync(cartId, GetUserId(), reason, correlationId, ct);
         return Ok(ApiResponse<object>.Ok(result, "Order cancelled", HttpContext.TraceIdentifier, correlationId));
     }
 

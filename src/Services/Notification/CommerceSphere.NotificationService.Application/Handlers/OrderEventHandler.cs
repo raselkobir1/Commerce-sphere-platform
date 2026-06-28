@@ -60,7 +60,7 @@ public class OrderEventHandler(
 
         // The customer cancellation email is owned by the Auth service; here we only raise the
         // admin in-app notification so the dashboard reflects the cancellation live.
-        var notification = Notification.OrderCancelled(evt.CartId, evt.UserId, evt.TotalAmount, evt.Items.Count);
+        var notification = Notification.OrderCancelled(evt.CartId, evt.UserId, evt.TotalAmount, evt.Items.Count, evt.Reason);
         await realtime.NotificationCreatedAsync(NotificationManager.Map(notification), ct);
 
         await uow.Notifications.AddAsync(notification, ct);

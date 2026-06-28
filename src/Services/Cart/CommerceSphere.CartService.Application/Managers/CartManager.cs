@@ -143,10 +143,22 @@ public class CartManager(
         return orders.Select(MapToResponse).ToList();
     }
 
-    public async Task<CartResponse> CancelOrderAsync(Guid cartId, string reason, string correlationId, CancellationToken ct = default)
+    // Admin cancel — may cancel any order.
+    public Task<CartResponse> CancelOrderAsync(Guid cartId, string reason, string correlationId, CancellationToken ct = default)
+        => CancelInternalAsync(cartId, null, reason, correlationId, ct);
+
+    // Customer cancel — only their own order (ownerUserId is enforced).
+    public Task<CartResponse> CancelOwnOrderAsync(Guid cartId, Guid userId, string reason, string correlationId, CancellationToken ct = default)
+        => CancelInternalAsync(cartId, userId, reason, correlationId, ct);
+
+    private async Task<CartResponse> CancelInternalAsync(Guid cartId, Guid? requireUserId, string reason, string correlationId, CancellationToken ct)
     {
         var cart = await uow.Carts.GetByIdAsync(cartId, ct)
             ?? throw new NotFoundException(nameof(Cart), cartId);
+
+        // Ownership guard for the customer path — you can only cancel your own orders.
+        if (requireUserId is not null && cart.UserId != requireUserId.Value)
+            throw new BusinessException("You can only cancel your own orders.");
 
         if (cart.Status != CartStatus.CheckedOut)
             throw new BusinessException($"Only checked-out orders can be cancelled (current status: {cart.Status}).");
@@ -161,17 +173,18 @@ public class CartManager(
 
         var cancelledEvent = new CartCancelledEvent(
             cart.Id, cart.UserId, cart.TotalAmount, snapshots,
-            string.IsNullOrWhiteSpace(reason) ? "Cancelled by admin" : reason.Trim(),
+            string.IsNullOrWhiteSpace(reason) ? "Cancelled" : reason.Trim(),
             correlationId, DateTime.UtcNow);
 
         // Write the event to the outbox in the SAME transaction as the status change → it can't be lost.
+        // Downstream: Inventory restocks, Auth emails the customer, Notification alerts admins.
         await uow.Outbox.AddAsync(OutboxMessage.Create(
             CartCancelledTopic, cart.Id.ToString(), JsonSerializer.Serialize(cancelledEvent), "CartCancelled", correlationId), ct);
         await uow.SaveChangesAsync(ct);
 
         await cacheService.RemoveCartAsync(cart.Id);
 
-        logger.LogInformation("Order {CartId} cancelled by admin. Reason: {Reason}", cart.Id, reason);
+        logger.LogInformation("Order {CartId} cancelled. Reason: {Reason}", cart.Id, reason);
         return MapToResponse(cart);
     }
 
