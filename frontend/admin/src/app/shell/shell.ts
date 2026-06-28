@@ -67,7 +67,7 @@ import { MenuPermission, Notification } from '../core/models';
                       @for (n of notifications.items(); track n.id) {
                         <div class="notif-item" [class.unseen]="!n.isRead">
                           <input type="checkbox" class="notif-check"
-                                 [checked]="checked().has(n.id)" (change)="toggleCheck(n.id)" />
+                                 [checked]="checked().has(n.id)" [disabled]="n.isRead" (change)="toggleCheck(n.id)" />
                           <button class="notif-body" (click)="openNotif(n)">
                             <span class="notif-title">{{ n.title }}</span>
                             <span class="notif-msg">{{ n.message }}</span>
@@ -176,8 +176,9 @@ export class Shell implements OnInit {
     this.checked.set(s);
   }
 
+  // Only unread notifications are worth selecting — already-read ones don't change.
   selectAll(): void {
-    this.checked.set(new Set(this.notifications.items().map((n) => n.id)));
+    this.checked.set(new Set(this.notifications.items().filter((n) => !n.isRead).map((n) => n.id)));
   }
 
   // One adaptive action: with items ticked, mark just those read; with none ticked, mark all read.
