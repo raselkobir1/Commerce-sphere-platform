@@ -1,6 +1,7 @@
 using CommerceSphere.CartService.Application.Interfaces;
 using CommerceSphere.CartService.Domain.Interfaces;
 using CommerceSphere.CartService.Infrastructure.Data;
+using CommerceSphere.CartService.Infrastructure.Kafka;
 using CommerceSphere.CartService.Infrastructure.Kafka.Consumers;
 using CommerceSphere.CartService.Infrastructure.Kafka.Producers;
 using CommerceSphere.CartService.Infrastructure.Redis;
@@ -30,6 +31,8 @@ public static class InfrastructureExtensions
         services.AddSingleton<ICartEventProducer, CartEventProducer>();
 
         services.AddHostedService<InventorySagaConsumer>();
+        // Publishes transactional-outbox rows to Kafka (reliable, never-lost event delivery).
+        services.AddHostedService<OutboxRelay>();
 
         return services;
     }

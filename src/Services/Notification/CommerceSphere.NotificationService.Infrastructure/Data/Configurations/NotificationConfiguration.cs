@@ -1,8 +1,8 @@
-using CommerceSphere.CartService.Domain.Entities;
+using CommerceSphere.NotificationService.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-namespace CommerceSphere.CartService.Infrastructure.Data.Configurations;
+namespace CommerceSphere.NotificationService.Infrastructure.Data.Configurations;
 
 public class NotificationConfiguration : IEntityTypeConfiguration<Notification>
 {
@@ -11,7 +11,6 @@ public class NotificationConfiguration : IEntityTypeConfiguration<Notification>
         builder.ToTable("notifications");
         builder.HasKey(n => n.Id);
 
-        // Domain-generated key (same rationale as Cart).
         builder.Property(n => n.Id).HasColumnName("id").ValueGeneratedNever();
         builder.Property(n => n.Type).HasColumnName("type").HasMaxLength(50).IsRequired();
         builder.Property(n => n.Title).HasColumnName("title").HasMaxLength(150).IsRequired();

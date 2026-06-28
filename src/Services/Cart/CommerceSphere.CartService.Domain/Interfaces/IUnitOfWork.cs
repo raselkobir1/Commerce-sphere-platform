@@ -5,7 +5,7 @@ namespace CommerceSphere.CartService.Domain.Interfaces;
 public interface IUnitOfWork : IDisposable
 {
     ICartRepository Carts { get; }
-    INotificationRepository Notifications { get; }
+    IOutboxRepository Outbox { get; }
     Task<int> SaveChangesAsync(CancellationToken ct = default);
     Task BeginTransactionAsync(CancellationToken ct = default);
     Task CommitTransactionAsync(CancellationToken ct = default);

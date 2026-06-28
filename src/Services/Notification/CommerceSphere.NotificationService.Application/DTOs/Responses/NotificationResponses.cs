@@ -1,4 +1,4 @@
-namespace CommerceSphere.CartService.Application.DTOs.Responses;
+namespace CommerceSphere.NotificationService.Application.DTOs.Responses;
 
 public record NotificationResponse(
     Guid Id,
@@ -12,7 +12,6 @@ public record NotificationResponse(
     bool IsRead,
     DateTime CreatedAt);
 
-// The payload the admin panel loads on startup (and refreshes after marking read).
 public record NotificationListResponse(
     IReadOnlyList<NotificationResponse> Items,
     int UnreadCount);

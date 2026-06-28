@@ -1,11 +1,8 @@
 using System.Text;
-using CommerceSphere.CartService.Application.Interfaces;
-using CommerceSphere.CartService.Application.Managers;
-using CommerceSphere.CartService.Application.Validators;
-using CommerceSphere.CartService.Infrastructure.Extensions;
+using CommerceSphere.NotificationService.API.Realtime;
+using CommerceSphere.NotificationService.Application.Interfaces;
+using CommerceSphere.NotificationService.Infrastructure.Extensions;
 using CommerceSphere.Shared.Common.Extensions;
-using FluentValidation;
-using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -18,9 +15,9 @@ var builder = WebApplication.CreateBuilder(args);
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
     .Enrich.FromLogContext()
-    .Enrich.WithProperty("ServiceName", "CartService")
+    .Enrich.WithProperty("ServiceName", "NotificationService")
     .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] [{ServiceName}] {Message:lj}{NewLine}{Exception}")
-    .WriteTo.File("logs/cart-.log", rollingInterval: RollingInterval.Day)
+    .WriteTo.File("logs/notification-.log", rollingInterval: RollingInterval.Day)
     .CreateLogger();
 
 builder.Host.UseSerilog();
@@ -40,22 +37,30 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateLifetime = true,
             ClockSkew = TimeSpan.Zero
         };
+
+        // The browser WebSocket can't send an Authorization header, so the SignalR client passes
+        // the JWT as ?access_token=... on hub requests. Read it from the query for /hubs paths.
+        opts.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+                    context.Token = accessToken;
+                return Task.CompletedTask;
+            }
+        };
     });
 
-builder.Services.AddAuthorization(opts =>
-{
-    opts.AddPolicy("AdminOnly", p => p.RequireRole("Admin"));
-    opts.AddPolicy("CustomerOrAdmin", p => p.RequireRole("Customer", "Admin"));
-});
+builder.Services.AddAuthorization();
 
 builder.Services.AddInfrastructure(builder.Configuration);
-builder.Services.AddScoped<ICartManager, CartManager>();
-
-builder.Services.AddFluentValidationAutoValidation();
-builder.Services.AddValidatorsFromAssemblyContaining<CreateCartRequestValidator>();
+builder.Services.AddSingleton<IRealtimeNotifier, SignalRRealtimeNotifier>();
+builder.Services.AddSignalR();
 
 builder.Services.AddOpenTelemetry()
-    .ConfigureResource(r => r.AddService("CartService"))
+    .ConfigureResource(r => r.AddService("NotificationService"))
     .WithTracing(t => t
         .AddAspNetCoreInstrumentation()
         .AddHttpClientInstrumentation()
@@ -66,7 +71,7 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new OpenApiInfo { Title = "CommerceSphere Cart API", Version = "v1" });
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "CommerceSphere Notification API", Version = "v1" });
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name = "Authorization", Type = SecuritySchemeType.Http,
@@ -86,14 +91,15 @@ app.UseCorrelationId();
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Cart API v1"));
+    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Notification API v1"));
 }
 
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapHealthChecks("/health");
 app.MapControllers();
+app.MapHub<NotificationHub>("/hubs/notifications");
 
-await app.Services.MigrateCartDbAsync();
+await app.Services.MigrateNotificationDbAsync();
 
 app.Run();

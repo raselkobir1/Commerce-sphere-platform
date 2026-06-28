@@ -9,11 +9,11 @@ namespace CommerceSphere.CartService.Infrastructure.UnitOfWork;
 public class UnitOfWork(CartDbContext context) : IUnitOfWork
 {
     private ICartRepository? _carts;
-    private INotificationRepository? _notifications;
+    private IOutboxRepository? _outbox;
     private IDbContextTransaction? _transaction;
 
     public ICartRepository Carts => _carts ??= new CartRepository(context);
-    public INotificationRepository Notifications => _notifications ??= new NotificationRepository(context);
+    public IOutboxRepository Outbox => _outbox ??= new OutboxRepository(context);
 
     public async Task<int> SaveChangesAsync(CancellationToken ct = default)
     {

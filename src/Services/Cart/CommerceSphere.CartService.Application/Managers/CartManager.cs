@@ -1,3 +1,4 @@
+using System.Text.Json;
 using CommerceSphere.CartService.Application.DTOs.Requests;
 using CommerceSphere.CartService.Application.DTOs.Responses;
 using CommerceSphere.CartService.Application.Interfaces;
@@ -15,9 +16,11 @@ public class CartManager(
     ICartCacheService cacheService,
     ICartEventProducer eventProducer,
     IIdempotencyService idempotencyService,
-    INotificationManager notificationManager,
     ILogger<CartManager> logger) : ICartManager
 {
+    // Kafka topics that go through the transactional outbox (written atomically with the order).
+    private const string CartCheckedOutTopic = "cart-checkedout";
+    private const string CartCancelledTopic = "cart-cancelled";
     public async Task<CartResponse> CreateCartAsync(CreateCartRequest request, string correlationId, CancellationToken ct = default)
     {
         // Idempotency check
@@ -156,12 +159,15 @@ public class CartManager(
             .ToList()
             .AsReadOnly();
 
-        await uow.SaveChangesAsync(ct);
-
-        await eventProducer.PublishCartCancelledAsync(new CartCancelledEvent(
+        var cancelledEvent = new CartCancelledEvent(
             cart.Id, cart.UserId, cart.TotalAmount, snapshots,
             string.IsNullOrWhiteSpace(reason) ? "Cancelled by admin" : reason.Trim(),
-            correlationId, DateTime.UtcNow));
+            correlationId, DateTime.UtcNow);
+
+        // Write the event to the outbox in the SAME transaction as the status change → it can't be lost.
+        await uow.Outbox.AddAsync(OutboxMessage.Create(
+            CartCancelledTopic, cart.Id.ToString(), JsonSerializer.Serialize(cancelledEvent), "CartCancelled", correlationId), ct);
+        await uow.SaveChangesAsync(ct);
 
         await cacheService.RemoveCartAsync(cart.Id);
 
@@ -182,28 +188,26 @@ public class CartManager(
 
         // Mark the cart as CheckedOut in DB first so it can't be modified while the saga runs.
         cart.Checkout();
-        // Cart is already change-tracked; SaveChanges persists the change (no DbSet.Update needed).
-        await uow.SaveChangesAsync(ct);
 
         // Snapshot item details into the event payload because cart items could change
-        // (or the cart could be deleted) before Inventory consumes this event.
+        // (or the cart could be deleted) before consumers process this event.
         var snapshots = cart.Items
             .Select(i => new CartItemSnapshot(i.ProductId, i.Sku, i.ProductName, i.Quantity, i.UnitPrice))
             .ToList()
             .AsReadOnly();
 
-        // Publishing CartCheckedOutEvent kicks off the checkout saga:
-        // Inventory Service consumes it → tries to reserve stock →
-        // replies with inventory-reserved (success) or inventory-reservation-failed (failure).
-        await eventProducer.PublishCartCheckedOutAsync(new CartCheckedOutEvent(
-            cart.Id, cart.UserId, cart.TotalAmount, snapshots, correlationId, DateTime.UtcNow));
+        // CartCheckedOutEvent kicks off the checkout saga (Inventory reserves stock) AND drives the
+        // admin order notification + customer confirmation email (Notification service). Written to
+        // the outbox in the SAME transaction as cart.Checkout() so the event is never lost — even if
+        // Kafka is down right now, the OutboxRelay publishes it once Kafka is back.
+        var checkedOutEvent = new CartCheckedOutEvent(
+            cart.Id, cart.UserId, cart.TotalAmount, snapshots, correlationId, DateTime.UtcNow);
+        await uow.Outbox.AddAsync(OutboxMessage.Create(
+            CartCheckedOutTopic, cart.Id.ToString(), JsonSerializer.Serialize(checkedOutEvent), "CartCheckedOut", correlationId), ct);
+        await uow.SaveChangesAsync(ct);
 
         // Cart is no longer active, so evict from cache to avoid serving stale data.
         await cacheService.RemoveCartAsync(cart.Id);
-
-        // Raise an admin notification (persisted + pushed live). The order is already CheckedOut
-        // and visible in the admin orders list at this point.
-        await notificationManager.CreateOrderPlacedAsync(cart, ct);
 
         logger.LogInformation("Cart {CartId} checked out. Saga initiated for user {UserId}", cart.Id, cart.UserId);
         return MapToResponse(cart);

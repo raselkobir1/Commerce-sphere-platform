@@ -9,6 +9,7 @@ volumes:
   pgdata-product:
   pgdata-inventory:
   pgdata-cart:
+  pgdata-notification:
   pgdata-keycloak:
   redis-data:
   kafka-data:
@@ -85,6 +86,24 @@ services:
       - commerce-net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U commerce -d cart_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-notification:
+    image: postgres:16-alpine
+    container_name: postgres-notification
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: notification_db
+      POSTGRES_USER: commerce
+      POSTGRES_PASSWORD: commerce_pass
+    volumes:
+      - pgdata-notification:/var/lib/postgresql/data
+    networks:
+      - commerce-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U commerce -d notification_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -345,6 +364,36 @@ services:
       retries: 5
       start_period: 20s
 
+  notification-service:
+    build:
+      context: .
+      dockerfile: src/Services/Notification/CommerceSphere.NotificationService.API/Dockerfile
+    container_name: notification-service
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:80
+      ConnectionStrings__NotificationDb: "Host=postgres-notification;Port=5432;Database=notification_db;Username=commerce;Password=commerce_pass;"
+      Jwt__Secret: "CommerceSphere_SuperSecret_JWT_Key_2024_Min32Chars!!"
+      Jwt__Issuer: "CommerceSphere"
+      Jwt__Audience: "CommerceSphereClients"
+      Kafka__BootstrapServers: "kafka:9092"
+      Email__SmtpHost: "mailpit"
+      Email__SmtpPort: "1025"
+    depends_on:
+      postgres-notification:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - commerce-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
   # ─── API Gateway ─────────────────────────────────────────────
 
   api-gateway:
@@ -369,6 +418,8 @@ services:
       inventory-service:
         condition: service_healthy
       cart-service:
+        condition: service_healthy
+      notification-service:
         condition: service_healthy
     networks:
       - commerce-net

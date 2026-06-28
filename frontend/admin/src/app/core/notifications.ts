@@ -25,7 +25,7 @@ export class Notifications {
 
   // Re-load the recent list + unread count from the server.
   refresh(): void {
-    this.api.get<NotificationList>('/api/carts/notifications').subscribe({
+    this.api.get<NotificationList>('/api/notifications').subscribe({
       next: (r) => { this.items.set(r.items); this.unread.set(r.unreadCount); },
       error: () => { /* keep whatever we already have */ },
     });
@@ -36,7 +36,7 @@ export class Notifications {
     if (this.unread() === 0) return;
     this.unread.set(0);
     this.items.update((list) => list.map((n) => ({ ...n, isRead: true })));
-    this.api.post('/api/carts/notifications/read').subscribe({ error: () => this.refresh() });
+    this.api.post('/api/notifications/read').subscribe({ error: () => this.refresh() });
   }
 
   private connect(): void {
@@ -44,7 +44,7 @@ export class Notifications {
     this.hub = new HubConnectionBuilder()
       // withCredentials:false — we authenticate with a bearer token (accessTokenFactory), not
       // cookies, so we avoid the stricter CORS-with-credentials handshake on the gateway.
-      .withUrl(`${API_URL}/hubs/orders`, {
+      .withUrl(`${API_URL}/hubs/notifications`, {
         accessTokenFactory: () => this.auth.token ?? '',
         withCredentials: false,
       })
@@ -52,7 +52,7 @@ export class Notifications {
       .configureLogging(LogLevel.Warning)
       .build();
 
-    this.hub.on('orderPlaced', (n: Notification) => {
+    this.hub.on('notification', (n: Notification) => {
       this.items.update((list) => [n, ...list].slice(0, 30));
       this.unread.update((c) => c + 1);
     });

@@ -86,6 +86,20 @@ services:
       Jwt__Audience: "${JWT_AUDIENCE:-CommerceSphereClients}"
       Kafka__BootstrapServers: "kafka:9092"
 
+  notification-service:
+    env_file: .env.development
+    ports:
+      - "5240:80"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__NotificationDb: "Host=postgres-notification;Port=5432;Database=notification_db;Username=${POSTGRES_USER:-commerce};Password=${POSTGRES_PASSWORD:-commerce_pass};"
+      Jwt__Secret: "${JWT_SECRET}"
+      Jwt__Issuer: "${JWT_ISSUER:-CommerceSphere}"
+      Jwt__Audience: "${JWT_AUDIENCE:-CommerceSphereClients}"
+      Kafka__BootstrapServers: "kafka:9092"
+      Email__SmtpHost: "mailpit"
+      Email__SmtpPort: "1025"
+
   api-gateway:
     env_file: .env.development
     environment:
@@ -111,6 +125,10 @@ services:
   postgres-cart:
     ports:
       - "5436:5432"
+
+  postgres-notification:
+    ports:
+      - "5438:5432"
 
   postgres-keycloak:
     ports:

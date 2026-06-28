@@ -54,10 +54,13 @@ dotnet build src/Services/Auth/CommerceSphere.AuthService.API/CommerceSphere.Aut
 | Auth Service | 5211 (http) / 7044 (https) |
 | Product Service | 5095 (http) / 7060 (https) |
 | Inventory Service | 5035 (http) / 7267 (https) |
+| Cart Service | 5236 (http) |
+| Notification Service | 5240 (http) |
 | PostgreSQL (auth) | 5433 |
 | PostgreSQL (product) | 5434 |
 | PostgreSQL (inventory) | 5435 |
 | PostgreSQL (cart) | 5436 |
+| PostgreSQL (notification) | 5438 |
 | Redis | 6379 |
 | Kafka | 9094 (external) |
 
@@ -73,6 +76,7 @@ Event-driven microservices on .NET 8. Four domain services communicate via Kafka
 - **Product** — Product catalog (CRUD, SKU, pricing)
 - **Inventory** — Stock quantities, reservations per SKU
 - **Cart** — Shopping cart, checkout saga orchestration
+- **Notification** — Reacts to domain events (order placed/cancelled, user created); admin in-app notifications (SignalR + REST feed) and customer emails. Outbox (producer side) + inbox idempotency + DLQ so nothing is lost or double-sent.
 
 ### Per-Service Layer Structure
 Every service follows the same four-project structure:
@@ -93,6 +97,7 @@ Routes by path prefix to internal Docker DNS names:
 - `/api/products/**` → `product-service:80`
 - `/api/inventory/**` → `inventory-service:80`
 - `/api/carts/**` → `cart-service:80`
+- `/api/notifications/**` and `/hubs/notifications/**` (SignalR WebSocket) → `notification-service:80`
 
 Features: JWT validation, rate limiting (200 req/min), correlation ID injection, active health checks (10 s interval).
 
@@ -103,8 +108,12 @@ Features: JWT validation, rate limiting (200 req/min), correlation ID injection,
 | `product-created` | Product | Inventory (sync stock record) |
 | `inventory-reserved` | Inventory | Cart (saga success path) |
 | `inventory-reservation-failed` | Inventory | Cart (saga compensation) |
-| `cart-checked-out` | Cart | — |
-| `dlq.product-created`, `dlq.cart-checkedout` | — | dead-letter queues |
+| `cart-checkedout` | Cart (via outbox) | Inventory (saga), Notification (admin alert + customer email) |
+| `cart-cancelled` | Cart (via outbox) | Auth (customer email), Notification (admin alert) |
+| `user-created` | Auth | Notification (builds local contact read-model) |
+| `dlq.product-created`, `dlq.cart-checkedout`, `dlq.cart-cancelled`, `dlq.notifications` | — | dead-letter queues |
+
+**Reliability patterns:** Cart writes `cart-checkedout` / `cart-cancelled` to a transactional **outbox** table in the same DB transaction as the order; an `OutboxRelay` background service publishes them to Kafka (never lost if Kafka is briefly down). The Notification service consumes with a manual-commit consumer (resumes from its offset after downtime — no missed events), dedupes via an **inbox** table keyed by business key (`checkedout:{cartId}`) so it never double-notifies, and dead-letters poison messages after retries.
 
 ### Checkout Saga (Cart Service)
 Cart publishes a reservation request → Inventory responds with `inventory-reserved` or `inventory-reservation-failed` → Cart either finalises or calls `RollbackAsync` to compensate. Idempotency keys (Redis) prevent duplicate processing on retry.

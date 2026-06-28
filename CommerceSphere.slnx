@@ -22,6 +22,12 @@
     <Project Path="src/Services/Inventory/CommerceSphere.InventoryService.Domain/CommerceSphere.InventoryService.Domain.csproj" />
     <Project Path="src/Services/Inventory/CommerceSphere.InventoryService.Infrastructure/CommerceSphere.InventoryService.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/src/Services/Notification/">
+    <Project Path="src/Services/Notification/CommerceSphere.NotificationService.API/CommerceSphere.NotificationService.API.csproj" />
+    <Project Path="src/Services/Notification/CommerceSphere.NotificationService.Application/CommerceSphere.NotificationService.Application.csproj" />
+    <Project Path="src/Services/Notification/CommerceSphere.NotificationService.Domain/CommerceSphere.NotificationService.Domain.csproj" />
+    <Project Path="src/Services/Notification/CommerceSphere.NotificationService.Infrastructure/CommerceSphere.NotificationService.Infrastructure.csproj" />
+  </Folder>
   <Folder Name="/src/Services/Product/">
     <Project Path="src/Services/Product/CommerceSphere.ProductService.API/CommerceSphere.ProductService.API.csproj" />
     <Project Path="src/Services/Product/CommerceSphere.ProductService.Application/CommerceSphere.ProductService.Application.csproj" />
