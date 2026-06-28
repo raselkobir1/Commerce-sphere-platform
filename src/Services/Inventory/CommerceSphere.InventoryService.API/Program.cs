@@ -3,6 +3,7 @@ using CommerceSphere.InventoryService.Application.Interfaces;
 using CommerceSphere.InventoryService.Application.Managers;
 using CommerceSphere.InventoryService.Application.Validators;
 using CommerceSphere.InventoryService.Infrastructure.Extensions;
+using CommerceSphere.Shared.Common.Authorization;
 using CommerceSphere.Shared.Common.Extensions;
 using FluentValidation;
 using FluentValidation.AspNetCore;
@@ -47,6 +48,8 @@ builder.Services.AddAuthorization(opts =>
     opts.AddPolicy("AdminOnly", p => p.RequireRole("Admin"));
     opts.AddPolicy("CustomerOrAdmin", p => p.RequireRole("Customer", "Admin"));
 });
+// Enables [HasPermission("...")] granular RBAC checks from the token's permission claims.
+builder.Services.AddPermissionAuthorization();
 
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<IInventoryManager, InventoryManager>();

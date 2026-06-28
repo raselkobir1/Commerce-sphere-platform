@@ -1,5 +1,6 @@
 using CommerceSphere.ProductService.Application.DTOs.Requests;
 using CommerceSphere.ProductService.Application.Interfaces;
+using CommerceSphere.Shared.Common.Authorization;
 using CommerceSphere.Shared.Common.Correlation;
 using CommerceSphere.Shared.Common.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -22,7 +23,7 @@ public class CategoryController(ICategoryManager categoryManager) : ControllerBa
     }
 
     [HttpPost]
-    [Authorize(Roles = "Admin")]
+    [HasPermission("categories:create")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> CreateCategory([FromBody] CreateCategoryRequest request, CancellationToken ct)
@@ -33,7 +34,7 @@ public class CategoryController(ICategoryManager categoryManager) : ControllerBa
     }
 
     [HttpPut("{id:guid}")]
-    [Authorize(Roles = "Admin")]
+    [HasPermission("categories:edit")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> UpdateCategory(Guid id, [FromBody] UpdateCategoryRequest request, CancellationToken ct)
@@ -43,7 +44,7 @@ public class CategoryController(ICategoryManager categoryManager) : ControllerBa
     }
 
     [HttpDelete("{id:guid}")]
-    [Authorize(Roles = "Admin")]
+    [HasPermission("categories:delete")]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteCategory(Guid id, CancellationToken ct)

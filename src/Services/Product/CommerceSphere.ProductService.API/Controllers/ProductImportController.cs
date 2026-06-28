@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using CommerceSphere.ProductService.Application.Interfaces;
+using CommerceSphere.Shared.Common.Authorization;
 using CommerceSphere.Shared.Common.Correlation;
 using CommerceSphere.Shared.Common.Exceptions;
 using CommerceSphere.Shared.Common.Models;
@@ -15,7 +16,7 @@ namespace CommerceSphere.ProductService.API.Controllers;
 //   4. GET  {jobId}/errors → download the report of rejected rows (when any).
 [ApiController]
 [Route("api/products/import")]
-[Authorize(Roles = "Admin")]
+[HasPermission("products:create")]
 [Produces("application/json")]
 public class ProductImportController(IProductImportService importService) : ControllerBase
 {

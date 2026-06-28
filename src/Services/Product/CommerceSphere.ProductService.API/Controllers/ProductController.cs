@@ -1,5 +1,6 @@
 using CommerceSphere.ProductService.Application.DTOs.Requests;
 using CommerceSphere.ProductService.Application.Interfaces;
+using CommerceSphere.Shared.Common.Authorization;
 using CommerceSphere.Shared.Common.Correlation;
 using CommerceSphere.Shared.Common.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -13,7 +14,7 @@ namespace CommerceSphere.ProductService.API.Controllers;
 public class ProductController(IProductManager productManager) : ControllerBase
 {
     [HttpPost]
-    [Authorize(Roles = "Admin")]
+    [HasPermission("products:create")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
@@ -26,7 +27,7 @@ public class ProductController(IProductManager productManager) : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
-    [Authorize(Roles = "Admin")]
+    [HasPermission("products:edit")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
@@ -39,7 +40,7 @@ public class ProductController(IProductManager productManager) : ControllerBase
 
     // Bulk publish / unpublish (admin product list). Only published products appear in the store.
     [HttpPost("publish")]
-    [Authorize(Roles = "Admin")]
+    [HasPermission("products:edit")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     public async Task<IActionResult> PublishProducts([FromBody] PublishProductsRequest request, CancellationToken ct)
     {
@@ -69,7 +70,7 @@ public class ProductController(IProductManager productManager) : ControllerBase
     }
 
     [HttpPatch("{id:guid}/activate")]
-    [Authorize(Roles = "Admin")]
+    [HasPermission("products:edit")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ActivateProduct(Guid id, CancellationToken ct)
@@ -80,7 +81,7 @@ public class ProductController(IProductManager productManager) : ControllerBase
     }
 
     [HttpPatch("{id:guid}/deactivate")]
-    [Authorize(Roles = "Admin")]
+    [HasPermission("products:edit")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeactivateProduct(Guid id, CancellationToken ct)

@@ -1,10 +1,14 @@
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpContext, HttpContextToken, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable, catchError, map, tap, throwError } from 'rxjs';
 import { Toast } from './toast';
 
 // Base URL of the API Gateway. Change this for production.
 export const API_URL = 'http://localhost:5000';
+
+// Set on a request when the caller opted out of error toasts (toastError: false). The auth
+// interceptor reads this so its global 401/403 handling can stay silent for background reads.
+export const SUPPRESS_ERROR_TOAST = new HttpContextToken<boolean>(() => false);
 
 // Every backend response is wrapped in this envelope; we just want `data`.
 interface Envelope<T> {
@@ -33,26 +37,31 @@ export class Api {
 
   get<T>(path: string, params?: Record<string, string | number | boolean | undefined>, opts?: ReqOptions): Observable<T> {
     return this.handle(
-      this.http.get<Envelope<T>>(API_URL + path, { params: this.params(params) }),
+      this.http.get<Envelope<T>>(API_URL + path, { params: this.params(params), context: this.context(opts) }),
       false,
       opts,
     );
   }
 
   post<T>(path: string, body?: unknown, opts?: ReqOptions): Observable<T> {
-    return this.handle(this.http.post<Envelope<T>>(API_URL + path, body ?? {}), true, opts);
+    return this.handle(this.http.post<Envelope<T>>(API_URL + path, body ?? {}, { context: this.context(opts) }), true, opts);
   }
 
   put<T>(path: string, body?: unknown, opts?: ReqOptions): Observable<T> {
-    return this.handle(this.http.put<Envelope<T>>(API_URL + path, body ?? {}), true, opts);
+    return this.handle(this.http.put<Envelope<T>>(API_URL + path, body ?? {}, { context: this.context(opts) }), true, opts);
   }
 
   patch<T>(path: string, body?: unknown, opts?: ReqOptions): Observable<T> {
-    return this.handle(this.http.patch<Envelope<T>>(API_URL + path, body ?? {}), true, opts);
+    return this.handle(this.http.patch<Envelope<T>>(API_URL + path, body ?? {}, { context: this.context(opts) }), true, opts);
   }
 
   delete<T>(path: string, opts?: ReqOptions): Observable<T> {
-    return this.handle(this.http.delete<Envelope<T>>(API_URL + path), true, opts);
+    return this.handle(this.http.delete<Envelope<T>>(API_URL + path, { context: this.context(opts) }), true, opts);
+  }
+
+  // Flags the request so the auth interceptor stays silent on errors when toastError is false.
+  private context(opts?: ReqOptions): HttpContext {
+    return new HttpContext().set(SUPPRESS_ERROR_TOAST, opts?.toastError === false);
   }
 
   // Unwraps the envelope and fires toasts. `isMutation` decides the default for success toasts.
@@ -66,7 +75,10 @@ export class Api {
       }),
       map((r) => r.data),
       catchError((err) => {
-        if (wantError) this.toast.error(this.errorMessage(err));
+        // 401 (session expired) and 403 (no permission) are handled globally by the auth
+        // interceptor, so don't also show the generic error toast for them.
+        const status = (err as { status?: number })?.status;
+        if (wantError && status !== 401 && status !== 403) this.toast.error(this.errorMessage(err));
         return throwError(() => err);
       }),
     );

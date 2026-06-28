@@ -3,6 +3,7 @@ using CommerceSphere.ProductService.Application.Interfaces;
 using CommerceSphere.ProductService.Application.Managers;
 using CommerceSphere.ProductService.Application.Validators;
 using CommerceSphere.ProductService.Infrastructure.Extensions;
+using CommerceSphere.Shared.Common.Authorization;
 using CommerceSphere.Shared.Common.Extensions;
 using FluentValidation;
 using FluentValidation.AspNetCore;
@@ -47,6 +48,8 @@ builder.Services.AddAuthorization(opts =>
     opts.AddPolicy("AdminOnly", p => p.RequireRole("Admin"));
     opts.AddPolicy("CustomerOrAdmin", p => p.RequireRole("Customer", "Admin"));
 });
+// Enables [HasPermission("...")] granular RBAC checks from the token's permission claims.
+builder.Services.AddPermissionAuthorization();
 
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<IProductManager, ProductManager>();

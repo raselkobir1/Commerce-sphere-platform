@@ -1,5 +1,6 @@
 using CommerceSphere.InventoryService.Application.DTOs.Requests;
 using CommerceSphere.InventoryService.Application.Interfaces;
+using CommerceSphere.Shared.Common.Authorization;
 using CommerceSphere.Shared.Common.Correlation;
 using CommerceSphere.Shared.Common.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -62,7 +63,7 @@ public class InventoryController(IInventoryManager inventoryManager) : Controlle
     }
 
     [HttpGet]
-    [Authorize(Roles = "Admin")]
+    [HasPermission("inventory:view")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetInventory(
         [FromQuery] int pageNumber = 1,
@@ -75,7 +76,7 @@ public class InventoryController(IInventoryManager inventoryManager) : Controlle
     }
 
     [HttpPost("adjust")]
-    [Authorize(Roles = "Admin")]
+    [HasPermission("inventory:edit")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
@@ -90,7 +91,7 @@ public class InventoryController(IInventoryManager inventoryManager) : Controlle
     }
 
     [HttpPost("receive")]
-    [Authorize(Roles = "Admin")]
+    [HasPermission("inventory:edit")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]

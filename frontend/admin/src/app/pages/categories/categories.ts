@@ -1,6 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Api } from '../../core/api';
+import { Perms } from '../../core/perms';
 import { Category } from '../../core/models';
 import { Pagination } from '../../shared/pagination';
 
@@ -12,6 +13,7 @@ import { Pagination } from '../../shared/pagination';
       <div><h1>Categories</h1><div class="sub">{{ categories().length }} categories — used by the storefront navigation</div></div>
     </div>
 
+    @if (perms.can('categories', 'create') || perms.can('categories', 'edit')) {
     <div class="card card-pad" style="max-width:600px; margin-bottom:18px">
       <h2 style="margin-bottom:14px">{{ form.id ? 'Edit category' : 'New category' }}</h2>
       <div class="row">
@@ -39,6 +41,7 @@ import { Pagination } from '../../shared/pagination';
         @if (form.id) { <button class="btn" (click)="cancel()">Cancel</button> }
       </div>
     </div>
+    }
 
     <div class="card">
       <div class="card-head"><h2>All categories</h2></div>
@@ -58,8 +61,8 @@ import { Pagination } from '../../shared/pagination';
                   <td class="muted">{{ c.description || '—' }}</td>
                   <td><span class="badge" [class.on]="c.isActive" [class.off]="!c.isActive">{{ c.isActive ? 'Active' : 'Hidden' }}</span></td>
                   <td class="right"><div class="actions">
-                    <button class="btn btn-sm" (click)="edit(c)">Edit</button>
-                    <button class="btn btn-sm btn-danger" (click)="remove(c)">Delete</button>
+                    @if (perms.can('categories', 'edit')) { <button class="btn btn-sm" (click)="edit(c)">Edit</button> }
+                    @if (perms.can('categories', 'delete')) { <button class="btn btn-sm btn-danger" (click)="remove(c)">Delete</button> }
                   </div></td>
                 </tr>
               }
@@ -74,6 +77,7 @@ import { Pagination } from '../../shared/pagination';
 })
 export class CategoriesPage implements OnInit {
   private api = inject(Api);
+  perms = inject(Perms);
 
   categories = signal<Category[]>([]);
   form: { id?: string; name: string; description: string; isActive: boolean; parentId: string | null; sortOrder: number } = this.blank();

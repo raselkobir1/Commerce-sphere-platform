@@ -20,7 +20,7 @@ public sealed class TestFactory
 
     public TestFactory()
     {
-        Jwt.Setup(j => j.GenerateAccessToken(It.IsAny<User>())).Returns("access-token");
+        Jwt.Setup(j => j.GenerateAccessToken(It.IsAny<User>(), It.IsAny<IEnumerable<string>>())).Returns("access-token");
         Jwt.Setup(j => j.GetAccessTokenExpiry()).Returns(DateTime.UtcNow.AddMinutes(60));
     }
 

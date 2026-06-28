@@ -1,5 +1,6 @@
 using CommerceSphere.ProductService.Application.DTOs.Requests;
 using CommerceSphere.ProductService.Application.Interfaces;
+using CommerceSphere.Shared.Common.Authorization;
 using CommerceSphere.Shared.Common.Correlation;
 using CommerceSphere.Shared.Common.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -22,7 +23,7 @@ public class BannerController(IBannerManager bannerManager) : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = "Admin")]
+    [HasPermission("banners:create")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status201Created)]
     public async Task<IActionResult> CreateBanner([FromBody] CreateBannerRequest request, CancellationToken ct)
     {
@@ -32,7 +33,7 @@ public class BannerController(IBannerManager bannerManager) : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
-    [Authorize(Roles = "Admin")]
+    [HasPermission("banners:edit")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> UpdateBanner(Guid id, [FromBody] UpdateBannerRequest request, CancellationToken ct)
@@ -42,7 +43,7 @@ public class BannerController(IBannerManager bannerManager) : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
-    [Authorize(Roles = "Admin")]
+    [HasPermission("banners:delete")]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteBanner(Guid id, CancellationToken ct)

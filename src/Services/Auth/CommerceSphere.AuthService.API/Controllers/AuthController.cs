@@ -1,6 +1,7 @@
 using CommerceSphere.AuthService.Application.DTOs.Requests;
 using CommerceSphere.AuthService.Application.DTOs.Responses;
 using CommerceSphere.AuthService.Application.Interfaces;
+using CommerceSphere.Shared.Common.Authorization;
 using CommerceSphere.Shared.Common.Correlation;
 using CommerceSphere.Shared.Common.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -86,7 +87,7 @@ public class AuthController(IAuthManager authManager) : ControllerBase
     }
 
     [HttpGet("users")]
-    [Authorize(Roles = "Admin")]
+    [HasPermission("users:view")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetUsers([FromQuery] PagedRequest paged, CancellationToken ct)
     {
@@ -95,7 +96,7 @@ public class AuthController(IAuthManager authManager) : ControllerBase
     }
 
     [HttpPost("users")]
-    [Authorize(Roles = "Admin")]
+    [HasPermission("users:create")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> CreateUser([FromBody] AdminCreateUserRequest request, CancellationToken ct)
@@ -106,7 +107,7 @@ public class AuthController(IAuthManager authManager) : ControllerBase
     }
 
     [HttpPut("users/{id:guid}")]
-    [Authorize(Roles = "Admin")]
+    [HasPermission("users:edit")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateUser(Guid id, [FromBody] AdminUpdateUserRequest request, CancellationToken ct)
     {
@@ -115,7 +116,7 @@ public class AuthController(IAuthManager authManager) : ControllerBase
     }
 
     [HttpDelete("users/{id:guid}")]
-    [Authorize(Roles = "Admin")]
+    [HasPermission("users:delete")]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> DeleteUser(Guid id, CancellationToken ct)
     {

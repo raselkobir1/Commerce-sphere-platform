@@ -1,4 +1,5 @@
 using BC = BCrypt.Net.BCrypt;
+using CommerceSphere.AuthService.Application.Authorization;
 using CommerceSphere.AuthService.Application.DTOs.Requests;
 using CommerceSphere.AuthService.Application.DTOs.Responses;
 using CommerceSphere.AuthService.Application.Interfaces;
@@ -53,7 +54,7 @@ public class AuthManager(
             .ContinueWith(t => logger.LogWarning(t.Exception, "Failed to send verification email to {Email}", user.Email),
                 TaskContinuationOptions.OnlyOnFaulted);
 
-        return BuildTokenResponse(user, refreshToken);
+        return await BuildTokenResponseAsync(user, refreshToken, ct);
     }
 
     public async Task<LoginResult> LoginAsync(
@@ -141,7 +142,7 @@ public class AuthManager(
         await uow.RefreshTokens.AddAsync(newRefreshToken, ct);
         await uow.SaveChangesAsync(ct);
 
-        return BuildTokenResponse(user, newRefreshToken);
+        return await BuildTokenResponseAsync(user, newRefreshToken, ct);
     }
 
     public async Task RevokeTokenAsync(RevokeTokenRequest request, CancellationToken ct = default)
@@ -225,16 +226,20 @@ public class AuthManager(
         await uow.RefreshTokens.AddAsync(refreshToken, ct);
         await uow.SaveChangesAsync(ct);
 
-        return new LoginSucceeded(BuildTokenResponse(user, refreshToken));
+        return new LoginSucceeded(await BuildTokenResponseAsync(user, refreshToken, ct));
     }
 
-    internal AuthTokenResponse BuildTokenResponse(User user, RefreshToken refreshToken) =>
-        new(
-            AccessToken: jwtService.GenerateAccessToken(user),
+    internal async Task<AuthTokenResponse> BuildTokenResponseAsync(
+        User user, RefreshToken refreshToken, CancellationToken ct = default)
+    {
+        // Embed the user's role permissions in the token so every service enforces the RBAC matrix.
+        var permissions = RolePermissionClaims.Build(await uow.Permissions.GetByRoleNameAsync(user.Role, ct));
+        return new(
+            AccessToken: jwtService.GenerateAccessToken(user, permissions),
             RefreshToken: refreshToken.Token,
             ExpiresAt: jwtService.GetAccessTokenExpiry(),
-            User: MapToResponse(user)
-        );
+            User: MapToResponse(user));
+    }
 
     internal static UserResponse MapToResponse(User u) =>
         new(u.Id, u.Email, u.FirstName, u.LastName, u.Role, u.IsActive,

@@ -1,3 +1,4 @@
+using CommerceSphere.AuthService.Application.Authorization;
 using CommerceSphere.AuthService.Application.DTOs.Responses;
 using CommerceSphere.AuthService.Application.Interfaces;
 using CommerceSphere.AuthService.Domain.Entities;
@@ -136,8 +137,9 @@ public class SsoManager(
                 new UserCreatedEvent(user.Id, user.Email, user.FirstName, user.LastName,
                                      user.Role, DateTime.UtcNow, correlationId), ct);
 
+        var permissions = RolePermissionClaims.Build(await uow.Permissions.GetByRoleNameAsync(user.Role, ct));
         var tokenResponse = new AuthTokenResponse(
-            AccessToken: jwtService.GenerateAccessToken(user),
+            AccessToken: jwtService.GenerateAccessToken(user, permissions),
             RefreshToken: refreshToken.Token,
             ExpiresAt: jwtService.GetAccessTokenExpiry(),
             User: AuthManager.MapToResponse(user));

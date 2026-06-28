@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text;
 using CommerceSphere.AuthService.Application.Interfaces;
 using CommerceSphere.AuthService.Domain.Entities;
+using CommerceSphere.Shared.Common.Authorization;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 
@@ -16,24 +17,28 @@ public class JwtService(IConfiguration config) : IJwtService
     // GetValue<int> is safe when the key is missing or blank; int.Parse would throw on empty string.
     private readonly int _expiryMinutes = config.GetValue<int>("Jwt:ExpiryMinutes", 60);
 
-    public string GenerateAccessToken(User user)
+    public string GenerateAccessToken(User user, IEnumerable<string> permissions)
     {
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_secret));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-        var claims = new[]
+        var claims = new List<Claim>
         {
-            new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-            new Claim(JwtRegisteredClaimNames.Email, user.Email),
-            new Claim(ClaimTypes.Role, user.Role),
-            new Claim("firstName", user.FirstName),
-            new Claim("lastName", user.LastName),
+            new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+            new(JwtRegisteredClaimNames.Email, user.Email),
+            new(ClaimTypes.Role, user.Role),
+            new("firstName", user.FirstName),
+            new("lastName", user.LastName),
             // Jti (JWT ID) is a unique identifier per token; downstream services can use it
             // to detect token replay if a revocation list is ever added.
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
             // Iat (issued-at) lets consumers detect tokens issued before a password-reset event.
-            new Claim(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
+            new(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
         };
+
+        // Granular RBAC grants ("products:create", …) — consumed by [HasPermission(...)].
+        foreach (var permission in permissions)
+            claims.Add(new Claim(PermissionClaims.Type, permission));
 
         var token = new JwtSecurityToken(
             issuer: _issuer,

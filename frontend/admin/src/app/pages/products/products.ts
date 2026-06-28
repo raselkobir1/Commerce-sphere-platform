@@ -3,6 +3,7 @@ import { CurrencyPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Api } from '../../core/api';
+import { Perms } from '../../core/perms';
 import { Paged, Product } from '../../core/models';
 import { Pagination } from '../../shared/pagination';
 
@@ -13,8 +14,10 @@ import { Pagination } from '../../shared/pagination';
     <div class="page-head">
       <div><h1>Products</h1><div class="sub">Tick products, then click Publish / Unpublish · new products start as drafts</div></div>
       <div class="actions">
-        <a class="btn" routerLink="/products/import">⬆ Bulk import</a>
-        <a class="btn btn-primary" routerLink="/products/new">+ New product</a>
+        @if (perms.can('products', 'create')) {
+          <a class="btn" routerLink="/products/import">⬆ Bulk import</a>
+          <a class="btn btn-primary" routerLink="/products/new">+ New product</a>
+        }
       </div>
     </div>
 
@@ -25,12 +28,14 @@ import { Pagination } from '../../shared/pagination';
       </div>
       <button class="btn" (click)="runSearch()">Search</button>
       <span style="flex:1"></span>
-      <button class="btn btn-primary" [disabled]="toPublish().length === 0" (click)="apply(true)">
-        Publish @if (toPublish().length) { ({{ toPublish().length }}) }
-      </button>
-      <button class="btn" [disabled]="toUnpublish().length === 0" (click)="apply(false)">
-        Unpublish @if (toUnpublish().length) { ({{ toUnpublish().length }}) }
-      </button>
+      @if (perms.can('products', 'edit')) {
+        <button class="btn btn-primary" [disabled]="toPublish().length === 0" (click)="apply(true)">
+          Publish @if (toPublish().length) { ({{ toPublish().length }}) }
+        </button>
+        <button class="btn" [disabled]="toUnpublish().length === 0" (click)="apply(false)">
+          Unpublish @if (toUnpublish().length) { ({{ toUnpublish().length }}) }
+        </button>
+      }
     </div>
 
     <div class="card">
@@ -63,8 +68,12 @@ import { Pagination } from '../../shared/pagination';
                     @if (!p.isActive) { <span class="badge off" style="margin-left:6px">Inactive</span> }
                   </td>
                   <td class="right"><div class="actions">
-                    <a class="btn btn-sm" [routerLink]="['/products', p.id]">Edit</a>
-                    <button class="btn btn-sm" (click)="toggleActive(p)">{{ p.isActive ? 'Deactivate' : 'Activate' }}</button>
+                    @if (perms.can('products', 'edit')) {
+                      <a class="btn btn-sm" [routerLink]="['/products', p.id]">Edit</a>
+                      <button class="btn btn-sm" (click)="toggleActive(p)">{{ p.isActive ? 'Deactivate' : 'Activate' }}</button>
+                    } @else {
+                      <span class="muted">—</span>
+                    }
                   </div></td>
                 </tr>
               }
@@ -80,6 +89,7 @@ import { Pagination } from '../../shared/pagination';
 })
 export class ProductsPage implements OnInit {
   private api = inject(Api);
+  perms = inject(Perms);
 
   products = signal<Product[]>([]);
   loading = signal(false);

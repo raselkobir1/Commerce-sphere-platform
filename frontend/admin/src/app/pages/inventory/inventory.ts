@@ -1,6 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Api } from '../../core/api';
+import { Perms } from '../../core/perms';
 import { InventoryItem, Paged } from '../../core/models';
 
 @Component({
@@ -18,7 +19,7 @@ import { InventoryItem, Paged } from '../../core/models';
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>SKU</th><th>On hand</th><th>Reserved</th><th>Available</th><th>Status</th><th class="right">Set new qty</th></tr>
+              <tr><th>SKU</th><th>On hand</th><th>Reserved</th><th>Available</th><th>Status</th>@if (perms.can('inventory', 'edit')) { <th class="right">Set new qty</th> }</tr>
             </thead>
             <tbody>
               @for (i of items(); track i.id) {
@@ -37,13 +38,15 @@ import { InventoryItem, Paged } from '../../core/models';
                       <span class="badge on">OK</span>
                     }
                   </td>
-                  <td class="right">
-                    <div class="actions">
-                      <input class="input" type="number" min="0" style="width:84px"
-                             [(ngModel)]="draft[i.id]" [name]="'q' + i.id" />
-                      <button class="btn btn-sm btn-primary" (click)="adjust(i)">Update</button>
-                    </div>
-                  </td>
+                  @if (perms.can('inventory', 'edit')) {
+                    <td class="right">
+                      <div class="actions">
+                        <input class="input" type="number" min="0" style="width:84px"
+                               [(ngModel)]="draft[i.id]" [name]="'q' + i.id" />
+                        <button class="btn btn-sm btn-primary" (click)="adjust(i)">Update</button>
+                      </div>
+                    </td>
+                  }
                 </tr>
               }
             </tbody>
@@ -55,6 +58,7 @@ import { InventoryItem, Paged } from '../../core/models';
 })
 export class InventoryPage implements OnInit {
   private api = inject(Api);
+  perms = inject(Perms);
 
   items = signal<InventoryItem[]>([]);
   loading = signal(false);
