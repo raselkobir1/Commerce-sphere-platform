@@ -92,6 +92,8 @@ img { max-width: 100%; display: block; }
 .track-step.last::before { display: none; }
 .track-dot { flex-shrink: 0; width: 12px; height: 12px; margin-top: 3px; border-radius: 50%; background: var(--accent, #16a34a); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #16a34a) 20%, transparent); z-index: 1; }
 .track-dot.cancel { background: var(--red, #e5484d); box-shadow: 0 0 0 3px color-mix(in srgb, var(--red, #e5484d) 20%, transparent); }
+.track-step.pending .track-dot { background: var(--line); box-shadow: none; }
+.track-step.pending .track-status { color: var(--muted); font-weight: 600; }
 .track-info { min-width: 0; }
 .track-status { font-weight: 700; font-size: 14px; }
 .track-note { font-size: 13px; color: var(--muted); }

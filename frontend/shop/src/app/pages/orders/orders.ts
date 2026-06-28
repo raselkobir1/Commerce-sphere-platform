@@ -43,18 +43,16 @@ import { Order } from '../../core/models';
 
             @if (trackingId() === o.id) {
               <div class="track">
-                @for (h of (o.statusHistory ?? []); track $index) {
-                  <div class="track-step" [class.last]="$last">
-                    <span class="track-dot" [class.cancel]="h.status === 'Cancelled'"></span>
+                @for (step of timeline(o); track $index) {
+                  <div class="track-step" [class.last]="$last" [class.pending]="!step.done">
+                    <span class="track-dot" [class.cancel]="step.cancel"></span>
                     <div class="track-info">
-                      <div class="track-status">{{ statusLabel(h.status) }}</div>
-                      @if (h.note) { <div class="track-note">{{ h.note }}</div> }
-                      <div class="track-time">{{ h.createdAt | date: 'medium' }}</div>
+                      <div class="track-status">{{ step.label }}</div>
+                      @if (step.note) { <div class="track-note">{{ step.note }}</div> }
+                      @if (step.time) { <div class="track-time">{{ step.time | date: 'medium' }}</div> }
+                      @else if (!step.done) { <div class="track-time">Pending</div> }
                     </div>
                   </div>
-                }
-                @if (!(o.statusHistory && o.statusHistory.length)) {
-                  <div class="muted">No tracking details yet.</div>
                 }
               </div>
             }
@@ -86,6 +84,29 @@ export class OrdersPage implements OnInit {
   track(id: string): void { this.trackingId.set(this.trackingId() === id ? null : id); }
 
   statusLabel(s: string): string { return s === 'CheckedOut' ? 'Placed' : s; }
+
+  // The normal order journey. The tracker always shows every step so the customer sees the full
+  // path — completed steps (with their real timestamp where recorded) and the remaining ones as
+  // "Pending". Cancelled orders show the steps reached, then a Cancelled step.
+  private readonly linear = ['CheckedOut', 'Confirmed', 'Shipped'];
+
+  timeline(o: Order): { label: string; note?: string | null; time?: string | null; done: boolean; cancel: boolean }[] {
+    const hist = new Map((o.statusHistory ?? []).map((h) => [h.status, h]));
+    const build = (status: string, done: boolean, cancel = false) => {
+      const h = hist.get(status);
+      const time = h?.createdAt ?? (status === 'CheckedOut' && done ? o.createdAt : null);
+      return { label: this.statusLabel(status), note: h?.note, time, done, cancel };
+    };
+
+    if (o.status === 'Cancelled') {
+      const reached = this.linear.filter((s) => hist.has(s));
+      if (!reached.includes('CheckedOut')) reached.unshift('CheckedOut');
+      return [...reached.map((s) => build(s, true)), build('Cancelled', true, true)];
+    }
+
+    const current = this.linear.indexOf(o.status);
+    return this.linear.map((s, i) => build(s, i <= current));
+  }
 
   load(): void {
     this.loading.set(true);
