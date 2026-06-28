@@ -16,6 +16,14 @@ Event-driven e-commerce microservices built on .NET 8. Four domain services comm
 
 ---
 
+## Documentation
+
+| Guide | Description |
+|---|---|
+| [Bulk Product Upload — Implementation Guide](docs/Bulk-Product-Upload-Guide.pdf) | Step-by-step walkthrough of how the 30K+ Excel product import works internally (async job, batching, PostgreSQL `COPY`, dedupe & error reporting) with simplified code. |
+
+---
+
 ## Prerequisites
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (or Docker Engine + Compose v2)
