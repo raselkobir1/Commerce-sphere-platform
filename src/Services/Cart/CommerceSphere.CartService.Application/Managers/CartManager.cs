@@ -15,6 +15,7 @@ public class CartManager(
     ICartCacheService cacheService,
     ICartEventProducer eventProducer,
     IIdempotencyService idempotencyService,
+    INotificationManager notificationManager,
     ILogger<CartManager> logger) : ICartManager
 {
     public async Task<CartResponse> CreateCartAsync(CreateCartRequest request, string correlationId, CancellationToken ct = default)
@@ -199,6 +200,10 @@ public class CartManager(
 
         // Cart is no longer active, so evict from cache to avoid serving stale data.
         await cacheService.RemoveCartAsync(cart.Id);
+
+        // Raise an admin notification (persisted + pushed live). The order is already CheckedOut
+        // and visible in the admin orders list at this point.
+        await notificationManager.CreateOrderPlacedAsync(cart, ct);
 
         logger.LogInformation("Cart {CartId} checked out. Saga initiated for user {UserId}", cart.Id, cart.UserId);
         return MapToResponse(cart);

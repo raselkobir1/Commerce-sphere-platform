@@ -104,6 +104,25 @@ export interface Banner {
   updatedAt?: string | null;
 }
 
+// Admin notification (e.g. a new order placed). Pushed live via SignalR + loaded over REST.
+export interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  orderId: string;
+  userId: string;
+  amount: number;
+  itemCount: number;
+  isRead: boolean;
+  createdAt: string;
+}
+
+export interface NotificationList {
+  items: Notification[];
+  unreadCount: number;
+}
+
 export interface OrderItem {
   id: string;
   productId: string;

@@ -1,5 +1,6 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CurrencyPipe, DatePipe } from '@angular/common';
+import { ActivatedRoute } from '@angular/router';
 import { Api } from '../../core/api';
 import { Perms } from '../../core/perms';
 import { Order, Paged, User } from '../../core/models';
@@ -68,6 +69,7 @@ import { Pagination } from '../../shared/pagination';
 })
 export class OrdersPage implements OnInit {
   private api = inject(Api);
+  private route = inject(ActivatedRoute);
   perms = inject(Perms);
 
   orders = signal<Order[]>([]);
@@ -88,7 +90,11 @@ export class OrdersPage implements OnInit {
   ngOnInit(): void {
     this.loading.set(true);
     this.api.get<Order[]>('/api/carts/orders').subscribe({
-      next: (o) => { this.orders.set(o); this.loading.set(false); },
+      next: (o) => {
+        this.orders.set(o);
+        this.loading.set(false);
+        this.focusOrderFromQuery();
+      },
       error: () => this.loading.set(false),
     });
     // Resolve customer names/emails by userId (admin-only listing).
@@ -97,6 +103,16 @@ export class OrdersPage implements OnInit {
   }
 
   toggle(id: string): void { this.expandedId.set(this.expandedId() === id ? null : id); }
+
+  // When arriving from a notification (?order=<id>), jump to that order's page and expand it.
+  private focusOrderFromQuery(): void {
+    const id = this.route.snapshot.queryParamMap.get('order');
+    if (!id) return;
+    const idx = this.orders().findIndex((o) => o.id === id);
+    if (idx < 0) return;
+    this.pageNumber.set(Math.floor(idx / this.pageSize()) + 1);
+    this.expandedId.set(id);
+  }
 
   cancel(o: Order, e: Event): void {
     e.stopPropagation(); // don't toggle the row's expand

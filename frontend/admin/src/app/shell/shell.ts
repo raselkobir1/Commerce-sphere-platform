@@ -1,14 +1,16 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { Auth } from '../core/auth';
 import { Perms } from '../core/perms';
 import { Theme } from '../core/theme';
-import { MenuPermission } from '../core/models';
+import { Notifications } from '../core/notifications';
+import { MenuPermission, Notification } from '../core/models';
 
 // The signed-in layout: icon sidebar + top bar (with the user/appearance menu) + the page.
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, DatePipe],
   template: `
     <div class="shell">
       <aside class="sidebar">
@@ -45,6 +47,39 @@ import { MenuPermission } from '../core/models';
           </div>
 
           <div class="top-actions">
+            <div class="notif-wrap">
+              <button class="notif-trigger" (click)="toggleNotif()" title="Notifications">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+                @if (notifications.hasUnread()) { <span class="notif-badge">{{ notifications.unread() }}</span> }
+              </button>
+
+              @if (notifOpen()) {
+                <div class="backdrop" (click)="notifOpen.set(false)"></div>
+                <div class="menu notif-menu">
+                  <div class="notif-head">
+                    <strong>Notifications</strong>
+                    @if (notifications.items().length) { <span class="muted">{{ notifications.items().length }} recent</span> }
+                  </div>
+                  @if (notifications.items().length === 0) {
+                    <div class="notif-empty">No notifications yet.</div>
+                  } @else {
+                    <div class="notif-list">
+                      @for (n of notifications.items(); track n.id) {
+                        <button class="notif-item" [class.unseen]="!n.isRead" (click)="openNotif(n)">
+                          <span class="notif-dot">🛒</span>
+                          <span class="notif-body">
+                            <span class="notif-title">{{ n.title }}</span>
+                            <span class="notif-msg">{{ n.message }}</span>
+                            <span class="notif-time">{{ n.createdAt | date: 'MMM d, h:mm a' }}</span>
+                          </span>
+                        </button>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+
             <div class="menu-wrap">
               <button class="menu-trigger" (click)="menuOpen.set(!menuOpen())">
                 <span class="avatar sm">{{ initials() }}</span>
@@ -102,13 +137,32 @@ import { MenuPermission } from '../core/models';
     </div>
   `,
 })
-export class Shell {
+export class Shell implements OnInit {
   auth = inject(Auth);
   perms = inject(Perms);
   theme = inject(Theme);
+  notifications = inject(Notifications);
   private router = inject(Router);
 
   menuOpen = signal(false);
+  notifOpen = signal(false);
+
+  ngOnInit(): void {
+    // The shell only renders for signed-in admins, so this is the right place to go live.
+    this.notifications.init();
+  }
+
+  // Opening the panel marks everything read → the badge clears (and stays cleared on refresh).
+  toggleNotif(): void {
+    const next = !this.notifOpen();
+    this.notifOpen.set(next);
+    if (next) this.notifications.markAllRead();
+  }
+
+  openNotif(n: Notification): void {
+    this.notifOpen.set(false);
+    this.router.navigate(['/orders'], { queryParams: { order: n.orderId } });
+  }
 
   // Which parent menus are expanded. Empty by default → sub-menus are collapsed until clicked.
   expanded = signal<Set<string>>(new Set());
@@ -146,6 +200,7 @@ export class Shell {
 
   logout(): void {
     this.menuOpen.set(false);
+    this.notifications.disconnect();
     this.auth.logout();
     this.perms.clear();
     this.router.navigate(['/login']);

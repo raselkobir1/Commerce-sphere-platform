@@ -1,4 +1,5 @@
 using System.Text;
+using CommerceSphere.CartService.API.Realtime;
 using CommerceSphere.CartService.Application.Interfaces;
 using CommerceSphere.CartService.Application.Managers;
 using CommerceSphere.CartService.Application.Validators;
@@ -40,6 +41,20 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateLifetime = true,
             ClockSkew = TimeSpan.Zero
         };
+
+        // The browser WebSocket can't send an Authorization header, so the SignalR client passes
+        // the JWT as ?access_token=... on hub requests. Read it from the query for /hubs paths.
+        opts.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+                    context.Token = accessToken;
+                return Task.CompletedTask;
+            }
+        };
     });
 
 builder.Services.AddAuthorization(opts =>
@@ -50,6 +65,9 @@ builder.Services.AddAuthorization(opts =>
 
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<ICartManager, CartManager>();
+builder.Services.AddScoped<INotificationManager, NotificationManager>();
+builder.Services.AddSingleton<IOrderNotifier, SignalROrderNotifier>();
+builder.Services.AddSignalR();
 
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<CreateCartRequestValidator>();
@@ -93,6 +111,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapHealthChecks("/health");
 app.MapControllers();
+app.MapHub<OrderNotificationHub>("/hubs/orders");
 
 await app.Services.MigrateCartDbAsync();
 
