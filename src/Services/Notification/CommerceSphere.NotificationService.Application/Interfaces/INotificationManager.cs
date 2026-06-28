@@ -6,5 +6,6 @@ namespace CommerceSphere.NotificationService.Application.Interfaces;
 public interface INotificationManager
 {
     Task<NotificationListResponse> GetAllAsync(CancellationToken ct = default);
+    Task MarkReadAsync(IReadOnlyList<Guid> ids, CancellationToken ct = default);
     Task MarkAllReadAsync(CancellationToken ct = default);
 }

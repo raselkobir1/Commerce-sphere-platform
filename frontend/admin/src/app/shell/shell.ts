@@ -65,15 +65,23 @@ import { MenuPermission, Notification } from '../core/models';
                   } @else {
                     <div class="notif-list">
                       @for (n of notifications.items(); track n.id) {
-                        <button class="notif-item" [class.unseen]="!n.isRead" (click)="openNotif(n)">
-                          <span class="notif-dot">🛒</span>
-                          <span class="notif-body">
+                        <div class="notif-item" [class.unseen]="!n.isRead">
+                          <input type="checkbox" class="notif-check"
+                                 [checked]="checked().has(n.id)" (change)="toggleCheck(n.id)" />
+                          <button class="notif-body" (click)="openNotif(n)">
                             <span class="notif-title">{{ n.title }}</span>
                             <span class="notif-msg">{{ n.message }}</span>
                             <span class="notif-time">{{ n.createdAt | date: 'MMM d, h:mm a' }}</span>
-                          </span>
-                        </button>
+                          </button>
+                        </div>
                       }
+                    </div>
+                    <div class="notif-foot">
+                      <button class="btn btn-sm" (click)="selectAll()">Select all</button>
+                      <button class="btn btn-sm btn-primary" [disabled]="selectedCount() === 0" (click)="submitSelected()">
+                        Mark read @if (selectedCount()) { ({{ selectedCount() }}) }
+                      </button>
+                      <button class="btn btn-sm" (click)="readAll()">Read all</button>
                     </div>
                   }
                 </div>
@@ -147,20 +155,46 @@ export class Shell implements OnInit {
   menuOpen = signal(false);
   notifOpen = signal(false);
 
+  // Which notifications the admin has ticked to mark read.
+  checked = signal<Set<string>>(new Set());
+  selectedCount = computed(() => this.checked().size);
+
   ngOnInit(): void {
     // The shell only renders for signed-in admins, so this is the right place to go live.
     this.notifications.init();
   }
 
-  // Opening the panel marks everything read → the badge clears (and stays cleared on refresh).
+  // Opening/closing the panel no longer auto-reads — the admin picks which to mark read.
   toggleNotif(): void {
     const next = !this.notifOpen();
     this.notifOpen.set(next);
-    if (next) this.notifications.markAllRead();
+    if (!next) this.checked.set(new Set()); // clear selection on close
+  }
+
+  toggleCheck(id: string): void {
+    const s = new Set(this.checked());
+    s.has(id) ? s.delete(id) : s.add(id);
+    this.checked.set(s);
+  }
+
+  selectAll(): void {
+    this.checked.set(new Set(this.notifications.items().map((n) => n.id)));
+  }
+
+  // Mark only the ticked notifications read; the badge drops by that many.
+  submitSelected(): void {
+    this.notifications.markRead([...this.checked()]);
+    this.checked.set(new Set());
+  }
+
+  readAll(): void {
+    this.notifications.markAllRead();
+    this.checked.set(new Set());
   }
 
   openNotif(n: Notification): void {
     this.notifOpen.set(false);
+    this.checked.set(new Set());
     this.router.navigate(['/orders'], { queryParams: { order: n.orderId } });
   }
 

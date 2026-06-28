@@ -19,6 +19,16 @@ public class NotificationRepository(NotificationDbContext db) : INotificationRep
     public Task<int> CountUnreadAsync(CancellationToken ct = default) =>
         db.Notifications.CountAsync(n => !n.IsRead, ct);
 
+    public async Task<int> MarkReadAsync(IReadOnlyList<Guid> ids, CancellationToken ct = default)
+    {
+        if (ids.Count == 0) return 0;
+        return await db.Notifications
+            .Where(n => !n.IsRead && ids.Contains(n.Id))
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(n => n.IsRead, true)
+                .SetProperty(n => n.UpdatedAt, DateTime.UtcNow), ct);
+    }
+
     public async Task<int> MarkAllReadAsync(CancellationToken ct = default) =>
         await db.Notifications
             .Where(n => !n.IsRead)

@@ -22,12 +22,23 @@ public class NotificationController(INotificationManager manager) : ControllerBa
         return Ok(ApiResponse<object>.Ok(result, "Notifications retrieved", HttpContext.TraceIdentifier, HttpContext.GetCorrelationId()));
     }
 
-    // Marks every notification read → unread count becomes 0 (called when the admin opens the panel).
+    // Marks the selected notifications read (the admin ticks items and submits).
     [HttpPost("read")]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> MarkRead([FromBody] MarkReadRequest request, CancellationToken ct)
+    {
+        await manager.MarkReadAsync(request.Ids ?? [], ct);
+        return Ok(ApiResponse.Ok("Notifications marked read", HttpContext.TraceIdentifier, HttpContext.GetCorrelationId()));
+    }
+
+    // Marks every notification read → unread count becomes 0 ("Read all" button).
+    [HttpPost("read-all")]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> MarkAllRead(CancellationToken ct)
     {
         await manager.MarkAllReadAsync(ct);
-        return Ok(ApiResponse.Ok("Notifications marked read", HttpContext.TraceIdentifier, HttpContext.GetCorrelationId()));
+        return Ok(ApiResponse.Ok("All notifications marked read", HttpContext.TraceIdentifier, HttpContext.GetCorrelationId()));
     }
 }
+
+public record MarkReadRequest(List<Guid> Ids);

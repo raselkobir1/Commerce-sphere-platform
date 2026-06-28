@@ -31,12 +31,22 @@ export class Notifications {
     });
   }
 
+  // Mark only the selected notifications read → the badge drops by how many were unread.
+  markRead(ids: string[]): void {
+    if (ids.length === 0) return;
+    const picked = new Set(ids);
+    const newlyRead = this.items().filter((n) => picked.has(n.id) && !n.isRead).length;
+    this.items.update((list) => list.map((n) => (picked.has(n.id) ? { ...n, isRead: true } : n)));
+    this.unread.update((c) => Math.max(0, c - newlyRead));
+    this.api.post('/api/notifications/read', { ids }).subscribe({ error: () => this.refresh() });
+  }
+
   // Mark everything read → badge clears (and stays cleared after refresh).
   markAllRead(): void {
     if (this.unread() === 0) return;
     this.unread.set(0);
     this.items.update((list) => list.map((n) => ({ ...n, isRead: true })));
-    this.api.post('/api/notifications/read').subscribe({ error: () => this.refresh() });
+    this.api.post('/api/notifications/read-all').subscribe({ error: () => this.refresh() });
   }
 
   private connect(): void {

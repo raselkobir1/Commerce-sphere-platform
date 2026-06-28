@@ -17,10 +17,16 @@ public class NotificationManager(IUnitOfWork uow, ILogger<NotificationManager> l
         return new NotificationListResponse(items.Select(Map).ToList(), unread);
     }
 
+    public async Task MarkReadAsync(IReadOnlyList<Guid> ids, CancellationToken ct = default)
+    {
+        var updated = await uow.Notifications.MarkReadAsync(ids, ct);
+        if (updated > 0) logger.LogInformation("Marked {Count} selected notification(s) read.", updated);
+    }
+
     public async Task MarkAllReadAsync(CancellationToken ct = default)
     {
         var updated = await uow.Notifications.MarkAllReadAsync(ct);
-        if (updated > 0) logger.LogInformation("Marked {Count} notification(s) read.", updated);
+        if (updated > 0) logger.LogInformation("Marked all {Count} notification(s) read.", updated);
     }
 
     internal static NotificationResponse Map(Notification n) =>
