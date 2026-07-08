@@ -119,6 +119,11 @@ img { max-width: 100%; display: block; }
 
 .input, select { padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px; font-size: 14px; font-family: inherit; background: #fff; outline: none; }
 .input:focus, select:focus { border-color: var(--brand); }
+
+.pw-field { position: relative; }
+.pw-field .input { padding-right: 40px; }
+.pw-toggle { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; background: none; border: none; border-radius: 6px; color: var(--muted); cursor: pointer; }
+.pw-toggle:hover { color: var(--ink); background: var(--bg); }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1.5px solid var(--line); background: #fff; color: var(--ink); padding: 11px 18px; border-radius: 10px; cursor: pointer; font-size: 15px; font-weight: 600; font-family: inherit; transition: .12s; }
 .btn:hover { background: var(--bg); }
 .btn-primary { background: var(--brand); border-color: var(--brand); color: #fff; }
