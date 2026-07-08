@@ -28,6 +28,7 @@ public class User : BaseEntity
     // ── Password reset ──────────────────────────────────────────────────────
     public string? PasswordResetToken { get; private set; }
     public DateTime? PasswordResetTokenExpiry { get; private set; }
+    public bool MustChangePassword { get; private set; }
 
     // ── Account lockout ─────────────────────────────────────────────────────
     public int FailedLoginAttempts { get; private set; }
@@ -163,8 +164,18 @@ public class User : BaseEntity
     public void ChangePassword(string newPasswordHash)
     {
         PasswordHash = newPasswordHash;
+        MustChangePassword = false;
         // Invalidate all existing refresh tokens by revoking them at the domain level
         // (the caller must save changes; we just update the in-memory state here).
+        SetUpdated();
+    }
+
+    // Admin-issued temporary password: the account must pick its own password at next login
+    // before it can do anything else (enforced in AuthManager.LoginAsync).
+    public void SetTemporaryPassword(string temporaryPasswordHash)
+    {
+        PasswordHash = temporaryPasswordHash;
+        MustChangePassword = true;
         SetUpdated();
     }
 

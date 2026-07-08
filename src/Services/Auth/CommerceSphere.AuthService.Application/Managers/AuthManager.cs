@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using BC = BCrypt.Net.BCrypt;
 using CommerceSphere.AuthService.Application.Authorization;
 using CommerceSphere.AuthService.Application.DTOs.Requests;
@@ -78,6 +79,13 @@ public class AuthManager(
         }
 
         logger.LogInformation("User authenticated. UserId: {UserId}, CorrelationId: {CorrelationId}", user.Id, correlationId);
+
+        // An admin-issued temporary password must be replaced before anything else happens.
+        if (user.MustChangePassword)
+        {
+            var passwordChangeToken = await challengeTokenService.CreateAsync(user.Id, ChallengeType.PasswordChange, ct);
+            return new LoginNeedsPasswordChange(passwordChangeToken);
+        }
 
         // 2FA takes priority over OTP when both are enabled.
         if (user.IsActiveTwoFactor && user.TwoFactorConfirmed)
@@ -217,6 +225,34 @@ public class AuthManager(
         logger.LogInformation("Admin deleted user {UserId}", id);
     }
 
+    public async Task AdminResetPasswordAsync(Guid id, CancellationToken ct = default)
+    {
+        var user = await uow.Users.GetByIdAsync(id, ct) ?? throw new NotFoundException(nameof(User), id);
+
+        var temporaryPassword = GenerateTemporaryPassword();
+        user.SetTemporaryPassword(BC.HashPassword(temporaryPassword));
+
+        foreach (var token in user.RefreshTokens.Where(t => t.IsActive))
+            token.Revoke();
+
+        // Send before persisting: if delivery fails, the user's password hasn't changed yet
+        // and the admin can safely retry instead of the account being reset with no way to know the new password.
+        await emailService.SendTemporaryPasswordAsync(user.Email, user.FirstName, temporaryPassword, ct);
+
+        uow.Users.Update(user);
+        await uow.SaveChangesAsync(ct);
+
+        logger.LogInformation("Admin reset password for user {UserId}", id);
+    }
+
+    private static string GenerateTemporaryPassword()
+    {
+        // Unambiguous charset (no 0/O/1/l/I) covering upper, lower, digit, and symbol classes.
+        const string chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%*";
+        return string.Create(12, RandomNumberGenerator.GetBytes(12),
+            (span, bytes) => { for (var i = 0; i < span.Length; i++) span[i] = chars[bytes[i] % chars.Length]; });
+    }
+
     private async Task<LoginResult> CompleteLoginAsync(User user, string ipAddress, CancellationToken ct)
     {
         user.RecordLogin();
@@ -244,5 +280,5 @@ public class AuthManager(
     internal static UserResponse MapToResponse(User u) =>
         new(u.Id, u.Email, u.FirstName, u.LastName, u.Role, u.IsActive,
             u.EmailVerified, u.IsActiveTwoFactor, u.TwoFactorConfirmed, u.IsOtpAuthEnable,
-            u.CreatedAt, u.LastLoginAt);
+            u.MustChangePassword, u.CreatedAt, u.LastLoginAt);
 }

@@ -17,4 +17,5 @@ public interface IAuthManager
     Task<UserResponse> AdminCreateUserAsync(AdminCreateUserRequest request, string correlationId, CancellationToken ct = default);
     Task<UserResponse> AdminUpdateUserAsync(Guid id, AdminUpdateUserRequest request, CancellationToken ct = default);
     Task AdminDeleteUserAsync(Guid id, CancellationToken ct = default);
+    Task AdminResetPasswordAsync(Guid id, CancellationToken ct = default);
 }

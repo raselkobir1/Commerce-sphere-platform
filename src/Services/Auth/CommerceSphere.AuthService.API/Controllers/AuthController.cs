@@ -54,6 +54,12 @@ public class AuthController(IAuthManager authManager) : ControllerBase
                     "A one-time code has been sent to your email. Submit it to /api/auth/otp/verify.",
                     HttpContext.TraceIdentifier, correlationId)),
 
+            LoginNeedsPasswordChange p =>
+                Ok(ApiResponse<object>.Ok(
+                    new { requiresPasswordChange = true, p.ChallengeToken },
+                    "You must set a new password before continuing. Submit it to /api/auth/password/complete-forced-change.",
+                    HttpContext.TraceIdentifier, correlationId)),
+
             _ => throw new InvalidOperationException("Unexpected login result type.")
         };
     }
@@ -125,6 +131,17 @@ public class AuthController(IAuthManager authManager) : ControllerBase
             return BadRequest(ApiResponse.Fail("You cannot delete your own account."));
         await authManager.AdminDeleteUserAsync(id, ct);
         return Ok(ApiResponse.Ok("User deleted", HttpContext.TraceIdentifier, HttpContext.GetCorrelationId()));
+    }
+
+    [HttpPost("users/{id:guid}/reset-password")]
+    [HasPermission("users:edit")]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ResetUserPassword(Guid id, CancellationToken ct)
+    {
+        if (id == GetUserId())
+            return BadRequest(ApiResponse.Fail("You cannot reset your own password this way — use Settings."));
+        await authManager.AdminResetPasswordAsync(id, ct);
+        return Ok(ApiResponse.Ok("A temporary password has been emailed to the user.", HttpContext.TraceIdentifier, HttpContext.GetCorrelationId()));
     }
 
     private Guid GetUserId()

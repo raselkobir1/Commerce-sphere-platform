@@ -38,6 +38,7 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         // Password reset
         builder.Property(u => u.PasswordResetToken).HasColumnName("password_reset_token").HasMaxLength(128);
         builder.Property(u => u.PasswordResetTokenExpiry).HasColumnName("password_reset_token_expiry");
+        builder.Property(u => u.MustChangePassword).HasColumnName("must_change_password").HasDefaultValue(false);
 
         // Account lockout
         builder.Property(u => u.FailedLoginAttempts).HasColumnName("failed_login_attempts").HasDefaultValue(0);

@@ -46,6 +46,8 @@ services:
       Email__SmtpHost: "mailpit"
       Email__SmtpPort: "1025"
       Email__AppBaseUrl: "http://localhost:5000"
+      Email__AdminPortalUrl: "http://localhost:4200"
+      Email__ShopPortalUrl: "http://localhost:4300"
 
   product-service:
     env_file: .env.development

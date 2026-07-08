@@ -75,10 +75,18 @@ import { Pagination } from '../../shared/pagination';
                   <div><div class="cell-main">{{ u.firstName }} {{ u.lastName }}</div><div class="cell-sub">{{ u.email }}</div></div>
                 </div></td>
                 <td><span class="chip" [class.admin]="u.role === 'Admin'">{{ u.role }}</span></td>
-                <td><span class="badge" [class.on]="u.isActive" [class.off]="!u.isActive">{{ u.isActive ? 'Active' : 'Disabled' }}</span></td>
+                <td>
+                  <span class="badge" [class.on]="u.isActive" [class.off]="!u.isActive">{{ u.isActive ? 'Active' : 'Disabled' }}</span>
+                  @if (u.mustChangePassword) { <span class="badge low" style="margin-left:6px">Pending reset</span> }
+                </td>
                 <td class="muted">{{ u.createdAt | date: 'mediumDate' }}</td>
                 <td class="right"><div class="actions">
                   @if (perms.can('users', 'edit')) { <button class="btn btn-sm" (click)="edit(u)">Edit</button> }
+                  @if (perms.can('users', 'edit')) {
+                    <button class="btn btn-sm btn-icon" [disabled]="resettingId() === u.id" (click)="resetPassword(u)" title="Reset password" aria-label="Reset password">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>
+                    </button>
+                  }
                   @if (perms.can('users', 'delete')) { <button class="btn btn-sm btn-danger" (click)="remove(u)">Delete</button> }
                 </div></td>
               </tr>
@@ -105,6 +113,7 @@ export class UsersPage implements OnInit {
   saving = signal(false);
   err = signal('');
   showPw = signal(false);
+  resettingId = signal<string | null>(null);
 
   private blank() { return { firstName: '', lastName: '', email: '', password: '', role: '', isActive: true }; }
 
@@ -155,6 +164,14 @@ export class UsersPage implements OnInit {
     this.api.delete(`/api/auth/users/${u.id}`).subscribe({
       next: () => this.load(),
       error: (e) => alert(e?.error?.message ?? 'Could not delete user.'),
+    });
+  }
+
+  resetPassword(u: User): void {
+    this.resettingId.set(u.id);
+    this.api.post(`/api/auth/users/${u.id}/reset-password`).subscribe({
+      next: () => { this.resettingId.set(null); this.load(); },
+      error: () => this.resettingId.set(null),
     });
   }
 }

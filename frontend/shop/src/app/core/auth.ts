@@ -1,7 +1,7 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Observable, catchError, map, of, tap } from 'rxjs';
 import { Api } from './api';
-import { AuthResult, User } from './models';
+import { AuthResult, LoginOutcome, User } from './models';
 
 const TOKEN_KEY = 'shopsphere.token';
 
@@ -17,12 +17,29 @@ export class Auth {
     return localStorage.getItem(TOKEN_KEY);
   }
 
-  login(email: string, password: string): Observable<User> {
-    return this.api.post<AuthResult>('/api/auth/login', { email, password }).pipe(
-      map((data) => {
-        if (!data?.accessToken) {
+  // Throws a friendly error if the account needs 2FA/OTP (not handled here); returns a challenge
+  // token instead of a user when an admin-issued temporary password must be replaced first.
+  login(email: string, password: string): Observable<LoginOutcome> {
+    return this.api
+      .post<AuthResult & { requiresPasswordChange?: boolean; challengeToken?: string }>('/api/auth/login', { email, password })
+      .pipe(
+        map((data) => {
+          if (data?.accessToken) {
+            this.save(data);
+            return { kind: 'success', user: data.user } as const;
+          }
+          if (data?.requiresPasswordChange && data.challengeToken) {
+            return { kind: 'passwordChange', challengeToken: data.challengeToken } as const;
+          }
           throw new Error('This account requires extra verification, which is not supported here.');
-        }
+        }),
+      );
+  }
+
+  // Redeems the challenge token from a forced password change and completes login.
+  completeForcedPasswordChange(challengeToken: string, newPassword: string): Observable<User> {
+    return this.api.post<AuthResult>('/api/auth/password/complete-forced-change', { challengeToken, newPassword }).pipe(
+      map((data) => {
         this.save(data);
         return data.user;
       }),

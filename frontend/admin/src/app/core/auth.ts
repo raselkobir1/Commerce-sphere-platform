@@ -2,7 +2,7 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { HttpClient, HttpContext } from '@angular/common/http';
 import { Observable, catchError, finalize, map, of, shareReplay, tap } from 'rxjs';
 import { API_URL, Api, SUPPRESS_ERROR_TOAST } from './api';
-import { AuthResult, User } from './models';
+import { AuthResult, LoginOutcome, User } from './models';
 
 const TOKEN_KEY = 'adminsphere.token';
 const REFRESH_KEY = 'adminsphere.refresh';
@@ -31,18 +31,44 @@ export class Auth {
     return localStorage.getItem(REFRESH_KEY);
   }
 
-  // Sign in. Throws a friendly error if the account needs 2FA/OTP (not handled here).
-  login(email: string, password: string): Observable<User> {
+  // Sign in. Throws a friendly error if the account needs 2FA/OTP (not handled here); returns a
+  // challenge token instead of a user when an admin-issued temporary password must be replaced first.
+  login(email: string, password: string): Observable<LoginOutcome> {
     // The login page shows its own inline error; success navigates — so no toast either way.
-    return this.api.post<AuthResult>('/api/auth/login', { email, password }, { toastSuccess: false, toastError: false }).pipe(
-      map((data) => {
-        if (!data?.accessToken) {
+    return this.api
+      .post<AuthResult & { requiresPasswordChange?: boolean; challengeToken?: string }>(
+        '/api/auth/login',
+        { email, password },
+        { toastSuccess: false, toastError: false },
+      )
+      .pipe(
+        map((data) => {
+          if (data?.accessToken) {
+            this.save(data);
+            return { kind: 'success', user: data.user } as const;
+          }
+          if (data?.requiresPasswordChange && data.challengeToken) {
+            return { kind: 'passwordChange', challengeToken: data.challengeToken } as const;
+          }
           throw new Error('This account requires extra verification, which AdminSphere does not support.');
-        }
-        this.save(data);
-        return data.user;
-      }),
-    );
+        }),
+      );
+  }
+
+  // Redeems the challenge token from a forced password change and completes login.
+  completeForcedPasswordChange(challengeToken: string, newPassword: string): Observable<User> {
+    return this.api
+      .post<AuthResult>(
+        '/api/auth/password/complete-forced-change',
+        { challengeToken, newPassword },
+        { toastSuccess: false, toastError: false },
+      )
+      .pipe(
+        map((data) => {
+          this.save(data);
+          return data.user;
+        }),
+      );
   }
 
   // Called once at startup to restore the session from the saved token.

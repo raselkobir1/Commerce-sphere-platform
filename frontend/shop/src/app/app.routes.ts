@@ -7,6 +7,8 @@ import { CheckoutPage } from './pages/checkout/checkout';
 import { OrderSuccessPage } from './pages/order-success/order-success';
 import { LoginPage } from './pages/login/login';
 import { RegisterPage } from './pages/register/register';
+import { ForgotPasswordPage } from './pages/forgot-password/forgot-password';
+import { ResetPasswordPage } from './pages/reset-password/reset-password';
 import { SsoCallbackPage } from './pages/sso-callback/sso-callback';
 import { AccountPage } from './pages/account/account';
 import { OrdersPage } from './pages/orders/orders';
@@ -21,6 +23,8 @@ export const routes: Routes = [
   { path: 'order-success', component: OrderSuccessPage },
   { path: 'login', component: LoginPage },
   { path: 'register', component: RegisterPage },
+  { path: 'forgot-password', component: ForgotPasswordPage },
+  { path: 'reset-password', component: ResetPasswordPage },
   { path: 'sso-callback', component: SsoCallbackPage },
   { path: '**', redirectTo: '' },
 ];

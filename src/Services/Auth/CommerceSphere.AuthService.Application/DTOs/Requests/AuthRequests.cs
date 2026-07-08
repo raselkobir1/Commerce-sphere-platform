@@ -40,6 +40,11 @@ public record ResetPasswordRequest(
     string NewPassword
 );
 
+public record ForcedPasswordChangeRequest(
+    string ChallengeToken,
+    string NewPassword
+);
+
 public record VerifyEmailRequest(
     string Token
 );

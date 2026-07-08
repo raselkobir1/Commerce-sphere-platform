@@ -1,6 +1,6 @@
 namespace CommerceSphere.AuthService.Application.Interfaces;
 
-public enum ChallengeType { TwoFactor, Otp }
+public enum ChallengeType { TwoFactor, Otp, PasswordChange }
 
 public interface IChallengeTokenService
 {

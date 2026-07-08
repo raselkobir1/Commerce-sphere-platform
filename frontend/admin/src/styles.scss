@@ -137,6 +137,7 @@ svg { display: block; }
 .btn-danger { color: var(--red); border-color: var(--red-soft); background: var(--red-soft); }
 .btn-danger:hover { background: #fbd9e0; }
 .btn:disabled { opacity: .55; cursor: not-allowed; }
+.btn-icon { padding: 0; width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; }
 
 /* ── Tables ── */
 .table-wrap { overflow-x: auto; }

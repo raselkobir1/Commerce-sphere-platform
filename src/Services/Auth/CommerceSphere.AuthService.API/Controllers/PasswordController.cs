@@ -27,4 +27,15 @@ public class PasswordController(IAccountManager accountManager) : ControllerBase
         await accountManager.ResetPasswordAsync(request, ct);
         return Ok(ApiResponse.Ok("Password reset successfully. Please log in with your new password.", HttpContext.TraceIdentifier, HttpContext.GetCorrelationId()));
     }
+
+    // Submitted after login responds with requiresPasswordChange (admin-issued temporary password).
+    [HttpPost("complete-forced-change")]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> CompleteForcedChange([FromBody] ForcedPasswordChangeRequest request, CancellationToken ct)
+    {
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var tokens = await accountManager.CompleteForcedPasswordChangeAsync(request, ip, ct);
+        return Ok(ApiResponse<object>.Ok(tokens, "Password updated. Login successful", HttpContext.TraceIdentifier, HttpContext.GetCorrelationId()));
+    }
 }

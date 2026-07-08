@@ -13,6 +13,7 @@ export interface User {
   isActiveTwoFactor?: boolean;
   twoFactorConfirmed?: boolean;
   isOtpAuthEnable?: boolean;
+  mustChangePassword?: boolean;
 }
 
 export interface AuthResult {
@@ -20,6 +21,10 @@ export interface AuthResult {
   refreshToken: string;
   user: User;
 }
+
+// /api/auth/login either logs in directly or, for an admin-issued temporary password,
+// returns a short-lived challenge token that must be redeemed via /api/auth/password/complete-forced-change.
+export type LoginOutcome = { kind: 'success'; user: User } | { kind: 'passwordChange'; challengeToken: string };
 
 // TOTP enrollment details returned by /api/auth/2fa/setup.
 export interface TwoFactorSetup {

@@ -9,6 +9,7 @@ public interface IAccountManager
     Task ChangePasswordAsync(Guid userId, ChangePasswordRequest request, CancellationToken ct = default);
     Task ForgotPasswordAsync(ForgotPasswordRequest request, CancellationToken ct = default);
     Task ResetPasswordAsync(ResetPasswordRequest request, CancellationToken ct = default);
+    Task<AuthTokenResponse> CompleteForcedPasswordChangeAsync(ForcedPasswordChangeRequest request, string ipAddress, CancellationToken ct = default);
 
     // Email verification
     Task SendVerificationEmailAsync(Guid userId, CancellationToken ct = default);

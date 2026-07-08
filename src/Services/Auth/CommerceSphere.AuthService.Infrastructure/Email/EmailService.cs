@@ -26,9 +26,13 @@ public class EmailService(
         return SendAsync(toEmail, toName, "Verify your CommerceSphere email", body, ct);
     }
 
-    public Task SendPasswordResetAsync(string toEmail, string toName, string token, CancellationToken ct = default)
+    public Task SendPasswordResetAsync(string toEmail, string toName, string token, bool isAdmin, CancellationToken ct = default)
     {
-        var resetUrl = $"{_opts.AppBaseUrl.TrimEnd('/')}/api/auth/password/reset?token={token}";
+        // Points at the frontend reset page, not the API — the reset endpoint is a POST that
+        // needs the new password too, so a bare link click can't complete it directly. Admin and
+        // Customer accounts sign in on different portals, so route each to the one they'd actually use.
+        var portalUrl = isAdmin ? _opts.AdminPortalUrl : _opts.ShopPortalUrl;
+        var resetUrl = $"{portalUrl.TrimEnd('/')}/reset-password?token={token}";
         var body = $"""
             <h2>Reset your password</h2>
             <p>Hi {toName},</p>
@@ -38,6 +42,19 @@ public class EmailService(
             <p>If you did not request a password reset, you can safely ignore this email.</p>
             """;
         return SendAsync(toEmail, toName, "Reset your CommerceSphere password", body, ct);
+    }
+
+    public Task SendTemporaryPasswordAsync(string toEmail, string toName, string temporaryPassword, CancellationToken ct = default)
+    {
+        var body = $"""
+            <h2>Your password has been reset</h2>
+            <p>Hi {toName},</p>
+            <p>An administrator has reset your CommerceSphere password. Your temporary password is:</p>
+            <p style="font-size:22px;font-weight:bold;letter-spacing:2px;background:#f3f4f6;padding:12px 18px;border-radius:8px;display:inline-block">{temporaryPassword}</p>
+            <p>Sign in with this temporary password — you'll be asked to choose a new one before you can continue.</p>
+            <p>If you did not expect this change, contact your administrator immediately.</p>
+            """;
+        return SendAsync(toEmail, toName, "Your CommerceSphere password has been reset", body, ct);
     }
 
     public Task SendOtpAsync(string toEmail, string toName, string otpCode, CancellationToken ct = default)

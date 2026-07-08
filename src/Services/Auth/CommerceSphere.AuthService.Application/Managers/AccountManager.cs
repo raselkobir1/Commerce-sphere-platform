@@ -12,6 +12,8 @@ namespace CommerceSphere.AuthService.Application.Managers;
 public class AccountManager(
     IUnitOfWork uow,
     IEmailService emailService,
+    IChallengeTokenService challengeTokenService,
+    AuthManager authManager,
     ILogger<AccountManager> logger) : IAccountManager
 {
     public async Task<UserResponse> UpdateProfileAsync(Guid userId, UpdateProfileRequest request, CancellationToken ct = default)
@@ -59,7 +61,7 @@ public class AccountManager(
         uow.Users.Update(user);
         await uow.SaveChangesAsync(ct);
 
-        _ = emailService.SendPasswordResetAsync(user.Email, user.FirstName, token, ct)
+        _ = emailService.SendPasswordResetAsync(user.Email, user.FirstName, token, user.Role == "Admin", ct)
             .ContinueWith(t => logger.LogWarning(t.Exception, "Failed to send password reset email to {Email}", user.Email),
                 TaskContinuationOptions.OnlyOnFaulted);
     }
@@ -85,6 +87,28 @@ public class AccountManager(
         uow.Users.Update(user);
         await uow.SaveChangesAsync(ct);
         logger.LogInformation("Password reset completed. UserId: {UserId}", user.Id);
+    }
+
+    public async Task<AuthTokenResponse> CompleteForcedPasswordChangeAsync(
+        ForcedPasswordChangeRequest request, string ipAddress, CancellationToken ct = default)
+    {
+        var result = await challengeTokenService.ValidateAndConsumeAsync(request.ChallengeToken, ct)
+            ?? throw new UnauthorizedException("Challenge token is invalid or has expired.");
+
+        if (result.Type != ChallengeType.PasswordChange)
+            throw new UnauthorizedException("Challenge token is not valid for a password change.");
+
+        var user = await uow.Users.GetByIdAsync(result.UserId, ct)
+            ?? throw new NotFoundException(nameof(User), result.UserId);
+
+        user.ChangePassword(BC.HashPassword(request.NewPassword));
+        uow.Users.Update(user);
+        await uow.SaveChangesAsync(ct);
+
+        logger.LogInformation("Forced password change completed. UserId: {UserId}", user.Id);
+
+        var loginResult = await authManager.CompleteLoginForChallengeAsync(user.Id, ipAddress, ct);
+        return ((LoginSucceeded)loginResult).Tokens;
     }
 
     public async Task SendVerificationEmailAsync(Guid userId, CancellationToken ct = default)

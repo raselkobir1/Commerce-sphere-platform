@@ -2,6 +2,8 @@ import { Routes } from '@angular/router';
 import { adminGuard, canView } from './core/admin.guard';
 import { Shell } from './shell/shell';
 import { LoginPage } from './pages/login/login';
+import { ForgotPasswordPage } from './pages/forgot-password/forgot-password';
+import { ResetPasswordPage } from './pages/reset-password/reset-password';
 import { DashboardPage } from './pages/dashboard/dashboard';
 import { ProductsPage } from './pages/products/products';
 import { ProductFormPage } from './pages/products/product-form';
@@ -18,6 +20,8 @@ import { OrdersPage } from './pages/orders/orders';
 
 export const routes: Routes = [
   { path: 'login', component: LoginPage },
+  { path: 'forgot-password', component: ForgotPasswordPage },
+  { path: 'reset-password', component: ResetPasswordPage },
   {
     path: '',
     component: Shell,
