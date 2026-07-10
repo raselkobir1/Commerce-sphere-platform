@@ -2,6 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { Auth } from '../core/auth';
+import { Chat } from '../core/chat';
 import { Cart } from '../core/cart';
 import { Search } from '../core/search';
 
@@ -67,6 +68,7 @@ export class Header {
   auth = inject(Auth);
   cart = inject(Cart);
   search = inject(Search);
+  private chat = inject(Chat);
   private router = inject(Router);
 
   menuOpen = signal(false);
@@ -84,6 +86,7 @@ export class Header {
     this.menuOpen.set(false);
     this.auth.logout();
     this.cart.clear();
+    void this.chat.reset();
     this.router.navigate(['/']);
   }
 }

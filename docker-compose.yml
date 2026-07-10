@@ -10,6 +10,7 @@ volumes:
   pgdata-inventory:
   pgdata-cart:
   pgdata-notification:
+  pgdata-chat:
   redis-data:
   kafka-data:
 
@@ -103,6 +104,24 @@ services:
       - commerce-net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U commerce -d notification_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-chat:
+    image: postgres:16-alpine
+    container_name: postgres-chat
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: chat_db
+      POSTGRES_USER: commerce
+      POSTGRES_PASSWORD: commerce_pass
+    volumes:
+      - pgdata-chat:/var/lib/postgresql/data
+    networks:
+      - commerce-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U commerce -d chat_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -326,6 +345,31 @@ services:
       retries: 5
       start_period: 20s
 
+  chat-service:
+    build:
+      context: .
+      dockerfile: src/Services/Chat/CommerceSphere.ChatService.API/Dockerfile
+    container_name: chat-service
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:80
+      ConnectionStrings__ChatDb: "Host=postgres-chat;Port=5432;Database=chat_db;Username=commerce;Password=commerce_pass;"
+      Jwt__Secret: "CommerceSphere_SuperSecret_JWT_Key_2024_Min32Chars!!"
+      Jwt__Issuer: "CommerceSphere"
+      Jwt__Audience: "CommerceSphereClients"
+    depends_on:
+      postgres-chat:
+        condition: service_healthy
+    networks:
+      - commerce-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
   # ─── API Gateway ─────────────────────────────────────────────
 
   api-gateway:
@@ -352,6 +396,8 @@ services:
       cart-service:
         condition: service_healthy
       notification-service:
+        condition: service_healthy
+      chat-service:
         condition: service_healthy
     networks:
       - commerce-net

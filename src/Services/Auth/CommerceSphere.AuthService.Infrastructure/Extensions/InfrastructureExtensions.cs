@@ -102,6 +102,10 @@ public static class InfrastructureExtensions
         if (!await db.Menus.AnyAsync(m => m.Key == "banners"))
             await db.Menus.AddAsync(Menu.Create("banners", "Banners", "/banners", "🖼️", 4));
 
+        // Support Chat inbox — where agents answer live customer chats (ChatService).
+        if (!await db.Menus.AnyAsync(m => m.Key == "support-chat"))
+            await db.Menus.AddAsync(Menu.Create("support-chat", "Support Chat", "/support-chat", "💬", 10));
+
         await db.SaveChangesAsync();
 
         // Ensure the Admin role has full CRUD on every menu (also covers menus added later).

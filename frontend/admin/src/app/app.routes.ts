@@ -17,6 +17,7 @@ import { RolesPage } from './pages/roles/roles';
 import { MenusPage } from './pages/menus/menus';
 import { PermissionsPage } from './pages/permissions/permissions';
 import { OrdersPage } from './pages/orders/orders';
+import { SupportChatPage } from './pages/support-chat/support-chat';
 
 export const routes: Routes = [
   { path: 'login', component: LoginPage },
@@ -42,6 +43,7 @@ export const routes: Routes = [
       { path: 'menus', component: MenusPage, canActivate: [canView('menus')] },
       { path: 'permissions', component: PermissionsPage, canActivate: [canView('permissions')] },
       { path: 'settings', component: SettingsPage, canActivate: [canView('settings')] },
+      { path: 'support-chat', component: SupportChatPage, canActivate: [canView('support-chat')] },
     ],
   },
   { path: '**', redirectTo: '' },

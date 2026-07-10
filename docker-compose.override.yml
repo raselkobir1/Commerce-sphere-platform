@@ -100,6 +100,17 @@ services:
       Email__SmtpHost: "mailpit"
       Email__SmtpPort: "1025"
 
+  chat-service:
+    env_file: .env.development
+    ports:
+      - "5245:80"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__ChatDb: "Host=postgres-chat;Port=5432;Database=chat_db;Username=${POSTGRES_USER:-commerce};Password=${POSTGRES_PASSWORD:-commerce_pass};"
+      Jwt__Secret: "${JWT_SECRET}"
+      Jwt__Issuer: "${JWT_ISSUER:-CommerceSphere}"
+      Jwt__Audience: "${JWT_AUDIENCE:-CommerceSphereClients}"
+
   api-gateway:
     env_file: .env.development
     environment:
@@ -129,6 +140,10 @@ services:
   postgres-notification:
     ports:
       - "5438:5432"
+
+  postgres-chat:
+    ports:
+      - "5437:5432"
 
   redis:
     ports:

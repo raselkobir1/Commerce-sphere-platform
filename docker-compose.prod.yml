@@ -69,6 +69,15 @@ services:
       Jwt__Audience: "${JWT_AUDIENCE}"
       Kafka__BootstrapServers: "kafka:9092"
 
+  chat-service:
+    env_file: .env.production
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__ChatDb: "Host=postgres-chat;Port=5432;Database=chat_db;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};"
+      Jwt__Secret: "${JWT_SECRET}"
+      Jwt__Issuer: "${JWT_ISSUER}"
+      Jwt__Audience: "${JWT_AUDIENCE}"
+
   api-gateway:
     env_file: .env.production
     ports:
@@ -98,6 +107,11 @@ services:
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
 
   postgres-cart:
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+
+  postgres-chat:
     environment:
       POSTGRES_USER: "${POSTGRES_USER}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"

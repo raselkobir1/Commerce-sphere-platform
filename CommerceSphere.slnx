@@ -16,6 +16,12 @@
     <Project Path="src/Services/Cart/CommerceSphere.CartService.Domain/CommerceSphere.CartService.Domain.csproj" />
     <Project Path="src/Services/Cart/CommerceSphere.CartService.Infrastructure/CommerceSphere.CartService.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/src/Services/Chat/">
+    <Project Path="src/Services/Chat/CommerceSphere.ChatService.API/CommerceSphere.ChatService.API.csproj" />
+    <Project Path="src/Services/Chat/CommerceSphere.ChatService.Application/CommerceSphere.ChatService.Application.csproj" />
+    <Project Path="src/Services/Chat/CommerceSphere.ChatService.Domain/CommerceSphere.ChatService.Domain.csproj" />
+    <Project Path="src/Services/Chat/CommerceSphere.ChatService.Infrastructure/CommerceSphere.ChatService.Infrastructure.csproj" />
+  </Folder>
   <Folder Name="/src/Services/Inventory/">
     <Project Path="src/Services/Inventory/CommerceSphere.InventoryService.API/CommerceSphere.InventoryService.API.csproj" />
     <Project Path="src/Services/Inventory/CommerceSphere.InventoryService.Application/CommerceSphere.InventoryService.Application.csproj" />
