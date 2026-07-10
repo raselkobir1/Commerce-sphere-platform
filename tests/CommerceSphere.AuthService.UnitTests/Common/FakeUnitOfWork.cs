@@ -28,9 +28,9 @@ public sealed class FakeUnitOfWork : IUnitOfWork
         return Task.FromResult(1);
     }
 
-    public Task BeginTransactionAsync(CancellationToken ct = default) => Task.CompletedTask;
-    public Task CommitTransactionAsync(CancellationToken ct = default) => Task.CompletedTask;
-    public Task RollbackTransactionAsync(CancellationToken ct = default) => Task.CompletedTask;
+    // Runs the action directly (no real transaction) — the in-memory fakes need no atomicity.
+    public Task ExecuteInTransactionAsync(Func<Task> action, CancellationToken ct = default) => action();
+
     public void Dispose() { }
 }
 

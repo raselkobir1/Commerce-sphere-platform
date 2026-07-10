@@ -58,15 +58,29 @@ public sealed class FakeUserEventProducer : IUserEventProducer
     }
 }
 
-// Stub SSO so the providers/login endpoints work without calling out to real OAuth providers.
+// Stub SSO so the providers/login/callback endpoints work without calling out to real OAuth
+// providers. ProcessCallbackAsync returns a deterministic identity derived from the code, so the
+// callback exercises the REAL SsoManager + UnitOfWork transaction + database (find-or-create user).
 public sealed class FakeSsoService : ISsoService
 {
+    public const string RedirectUri = "http://localhost:4300/sso-callback";
+
     public Task<SsoLoginUrlResponse> BuildLoginUrlAsync(string provider, string redirectUri, CancellationToken ct = default)
         => Task.FromResult(new SsoLoginUrlResponse(provider, $"https://sso.test/auth?provider={provider}", "state-token"));
 
+    // Treat the "code" as the desired identity: "sub|email|first|last". Lets a test drive a
+    // first-time signup and a returning login deterministically.
     public Task<(SsoUserInfo UserInfo, string Provider, string RedirectUri)> ProcessCallbackAsync(
         string code, string state, CancellationToken ct = default)
-        => throw new NotImplementedException("SSO callback is not exercised in integration tests.");
+    {
+        var parts = code.Split('|');
+        var info = new SsoUserInfo(
+            parts.ElementAtOrDefault(0) ?? "sub-1",
+            parts.ElementAtOrDefault(1) ?? "sso.user@example.com",
+            parts.ElementAtOrDefault(2) ?? "Sso",
+            parts.ElementAtOrDefault(3) ?? "User");
+        return Task.FromResult((info, "google", RedirectUri));
+    }
 
     public IReadOnlyList<SsoProviderInfo> GetProviders() => new[]
     {
@@ -75,5 +89,5 @@ public sealed class FakeSsoService : ISsoService
     };
 
     public Task<string?> PeekRedirectUriAsync(string state, CancellationToken ct = default)
-        => Task.FromResult<string?>("http://localhost/callback");
+        => Task.FromResult<string?>(RedirectUri);
 }

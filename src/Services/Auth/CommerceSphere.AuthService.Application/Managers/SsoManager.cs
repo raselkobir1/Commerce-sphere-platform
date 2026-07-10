@@ -53,17 +53,20 @@ public class SsoManager(
         // logins with the same email both see null and try to INSERT the same user row, causing
         // a unique constraint violation on ix_users_email. The catch block handles that case.
 
-        User? user;
+        User? user = null;
         bool isNewUser = false;
 
-        await uow.BeginTransactionAsync(ct);
         try
         {
-            // Step 1: look up an existing link by social identity (most common path for returning users).
-            user = await uow.Users.GetByExternalLoginAsync(provider, userInfo.Sub, ct);
-
-            if (user is null)
+            // The whole resolve-or-create runs in one transaction (via the retrying execution
+            // strategy, required by EnableRetryOnFailure) so a first-time login creates the user
+            // and its ExternalLogin atomically.
+            await uow.ExecuteInTransactionAsync(async () =>
             {
+                // Step 1: look up an existing link by social identity (most common path for returning users).
+                user = await uow.Users.GetByExternalLoginAsync(provider, userInfo.Sub, ct);
+                if (user is not null) return;
+
                 // Step 2: try to find a locally-registered account with the same email.
                 // This handles the case where a user registered with email/password first and then
                 // tries to log in with the same email via Google — we link the accounts automatically.
@@ -74,11 +77,8 @@ public class SsoManager(
                     // Step 3: first-ever login with this social identity — create a new local user.
                     user = User.CreateFromSso(userInfo.Email, userInfo.FirstName, userInfo.LastName);
                     await uow.Users.AddAsync(user, ct);
-
-                    // Flush to DB now so user.Id is assigned before we create the ExternalLogin FK.
-                    await uow.SaveChangesAsync(ct);
+                    await uow.SaveChangesAsync(ct);   // flush so user.Id is set for the ExternalLogin FK
                     isNewUser = true;
-
                     logger.LogInformation(
                         "New SSO user created. UserId: {UserId}, Provider: {Provider}, CorrelationId: {CorrelationId}",
                         user.Id, provider, correlationId);
@@ -94,25 +94,22 @@ public class SsoManager(
                 // are resolved directly (Step 1 path) without checking by email again.
                 var externalLogin = ExternalLogin.Create(user.Id, provider, userInfo.Sub);
                 await uow.Users.AddExternalLoginAsync(externalLogin, ct);
-            }
-
-            await uow.CommitTransactionAsync(ct);
+                await uow.SaveChangesAsync(ct);
+            }, ct);
         }
         catch (Exception ex) when (IsUniqueConstraintViolation(ex))
         {
             // Two concurrent first-time logins for the same email raced — the other request won.
-            // Roll back, then fall back to the existing user.
-            await uow.RollbackTransactionAsync(ct);
+            // The transaction was rolled back automatically; fall back to the existing user.
+            isNewUser = false;
             user = await uow.Users.GetByEmailAsync(userInfo.Email, ct)
                 ?? throw new SsoException("SSO login failed due to a concurrent signup conflict. Please try again.");
             logger.LogWarning(
                 "Concurrent SSO signup conflict resolved. Email: {Email}, Provider: {Provider}", userInfo.Email, provider);
         }
-        catch
-        {
-            await uow.RollbackTransactionAsync(ct);
-            throw;
-        }
+
+        if (user is null)
+            throw new SsoException("SSO login failed. Please try again.");
 
         if (!user.IsActive)
             throw new UnauthorizedException("Account is deactivated.");

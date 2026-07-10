@@ -2,7 +2,7 @@ using CommerceSphere.AuthService.Domain.Interfaces;
 using CommerceSphere.AuthService.Domain.Interfaces.Repositories;
 using CommerceSphere.AuthService.Infrastructure.Data;
 using CommerceSphere.AuthService.Infrastructure.Repositories;
-using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.EntityFrameworkCore;
 
 namespace CommerceSphere.AuthService.Infrastructure.UnitOfWork;
 
@@ -13,7 +13,6 @@ public class UnitOfWork(AuthDbContext db) : IUnitOfWork
     private IRoleRepository? _roles;
     private IMenuRepository? _menus;
     private IRoleMenuPermissionRepository? _permissions;
-    private IDbContextTransaction? _transaction;
 
     // Repositories are created lazily so we don't pay allocation cost for repos that
     // a given use-case never touches.
@@ -27,25 +26,23 @@ public class UnitOfWork(AuthDbContext db) : IUnitOfWork
     // entire use-case operation atomic from the database perspective.
     public Task<int> SaveChangesAsync(CancellationToken ct = default) => db.SaveChangesAsync(ct);
 
-    public async Task BeginTransactionAsync(CancellationToken ct = default) =>
-        _transaction = await db.Database.BeginTransactionAsync(ct);
-
-    public async Task CommitTransactionAsync(CancellationToken ct = default)
+    // EnableRetryOnFailure installs a retrying execution strategy, which forbids a plain
+    // user-initiated BeginTransaction. The strategy must own the transaction so it can retry the
+    // whole unit on a transient failure; it also rolls back automatically if the action throws.
+    public async Task ExecuteInTransactionAsync(Func<Task> action, CancellationToken ct = default)
     {
-        if (_transaction is not null)
-            await _transaction.CommitAsync(ct);
-    }
-
-    public async Task RollbackTransactionAsync(CancellationToken ct = default)
-    {
-        if (_transaction is not null)
-            await _transaction.RollbackAsync(ct);
+        var strategy = db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await db.Database.BeginTransactionAsync(ct);
+            await action();
+            await transaction.CommitAsync(ct);
+        });
     }
 
     public void Dispose()
     {
-        // Only dispose the transaction — the DI container owns AuthDbContext (scoped lifetime)
-        // and disposes it when the request scope ends. Disposing it here causes double-dispose.
-        _transaction?.Dispose();
+        // No-op: the DI container owns AuthDbContext (scoped lifetime) and disposes it when the
+        // request scope ends. Transactions are scoped to ExecuteInTransactionAsync and disposed there.
     }
 }
