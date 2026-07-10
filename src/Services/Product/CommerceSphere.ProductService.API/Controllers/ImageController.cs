@@ -32,8 +32,9 @@ public class ImageController(IImageStorage imageStorage) : ControllerBase
         if (!AllowedTypes.Contains(file.ContentType))
             throw new BusinessException("Unsupported image type. Use JPEG, PNG, WebP, or GIF.");
 
-        await using var stream = file.OpenReadStream();
-        var url = await imageStorage.UploadAsync(stream, file.FileName, file.ContentType, ct);
+        using var buffer = new MemoryStream();
+        await file.CopyToAsync(buffer, ct);
+        var url = await imageStorage.UploadAsync(buffer.ToArray(), file.FileName, file.ContentType, ct);
 
         return Ok(ApiResponse<object>.Ok(new { url }, "Image uploaded",
             HttpContext.TraceIdentifier, HttpContext.GetCorrelationId()));

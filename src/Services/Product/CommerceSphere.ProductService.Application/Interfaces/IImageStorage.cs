@@ -8,5 +8,5 @@ public interface IImageStorage
     bool IsConfigured { get; }
 
     // Uploads the image bytes and returns the hosted URL to persist in imageUrl.
-    Task<string> UploadAsync(Stream content, string fileName, string contentType, CancellationToken ct = default);
+    Task<string> UploadAsync(byte[] content, string fileName, string contentType, CancellationToken ct = default);
 }

@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -18,7 +19,7 @@ public class CloudinaryImageStorage(
 
     public bool IsConfigured => _opts.IsConfigured;
 
-    public async Task<string> UploadAsync(Stream content, string fileName, string contentType, CancellationToken ct = default)
+    public async Task<string> UploadAsync(byte[] content, string fileName, string contentType, CancellationToken ct = default)
     {
         if (!_opts.IsConfigured)
             throw new BusinessException("Image upload is not configured. Set the Cloudinary credentials.");
@@ -29,14 +30,12 @@ public class CloudinaryImageStorage(
         var toSign = $"folder={_opts.Folder}&timestamp={timestamp}";
         var signature = Sha1Hex(toSign + _opts.ApiSecret);
 
-        using var form = new MultipartFormDataContent
-        {
-            { CreateFileContent(content, fileName, contentType), "file", fileName },
-            { new StringContent(_opts.ApiKey), "api_key" },
-            { new StringContent(timestamp), "timestamp" },
-            { new StringContent(_opts.Folder), "folder" },
-            { new StringContent(signature), "signature" }
-        };
+        using var form = new MultipartFormDataContent();
+        AddField(form, "api_key", _opts.ApiKey);
+        AddField(form, "timestamp", timestamp);
+        AddField(form, "folder", _opts.Folder);
+        AddField(form, "signature", signature);
+        AddFile(form, content, fileName, contentType);
 
         var endpoint = $"https://api.cloudinary.com/v1_1/{_opts.CloudName}/image/upload";
         using var response = await http.PostAsync(endpoint, form, ct);
@@ -56,12 +55,28 @@ public class CloudinaryImageStorage(
         return secureUrl;
     }
 
-    private static StreamContent CreateFileContent(Stream content, string fileName, string contentType)
+    // Adds a text field. Content-Disposition names are set explicitly WITH QUOTES — .NET's default
+    // MultipartFormDataContent emits unquoted names (name=api_key), which Cloudinary's strict
+    // RFC 7578 parser ignores, causing it to treat a signed upload as unsigned. Quoting fixes that.
+    private static void AddField(MultipartFormDataContent form, string name, string value)
     {
-        var file = new StreamContent(content);
+        var field = new StringContent(value);
+        field.Headers.ContentType = null;   // plain form field, like `curl -F name=value`
+        field.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data") { Name = $"\"{name}\"" };
+        form.Add(field);
+    }
+
+    private static void AddFile(MultipartFormDataContent form, byte[] content, string fileName, string contentType)
+    {
+        var file = new ByteArrayContent(content);
         if (!string.IsNullOrWhiteSpace(contentType))
-            file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
-        return file;
+            file.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+        file.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+        {
+            Name = "\"file\"",
+            FileName = $"\"{fileName}\""
+        };
+        form.Add(file);
     }
 
     private static string Sha1Hex(string input)
