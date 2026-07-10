@@ -25,15 +25,17 @@ public class CloudinaryImageStorage(
             throw new BusinessException("Image upload is not configured. Set the Cloudinary credentials.");
 
         // Cloudinary signed upload: sign the alphabetically-sorted params (excluding file/api_key)
-        // plus the api_secret. We sign folder + timestamp.
+        // plus the api_secret. We sign folder + timestamp + transformation (the on-upload resize).
         var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
-        var toSign = $"folder={_opts.Folder}&timestamp={timestamp}";
+        var transformation = _opts.Transformation;
+        var toSign = $"folder={_opts.Folder}&timestamp={timestamp}&transformation={transformation}";
         var signature = Sha1Hex(toSign + _opts.ApiSecret);
 
         using var form = new MultipartFormDataContent();
         AddField(form, "api_key", _opts.ApiKey);
         AddField(form, "timestamp", timestamp);
         AddField(form, "folder", _opts.Folder);
+        AddField(form, "transformation", transformation);   // resize + optimise before storing
         AddField(form, "signature", signature);
         AddFile(form, content, fileName, contentType);
 
