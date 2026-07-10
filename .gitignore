@@ -66,7 +66,9 @@ ipch/
 BenchmarkDotNet.Artifacts/
 
 # ── Secrets and environment ───────────────────────────────────────────────────
-.env                         # generic local env (not used by this project)
+# .env is a tracked symlink -> .env.development (Compose only auto-loads a file
+# named exactly ".env" for ${VAR} substitution in compose files; env_file: entries
+# don't cover that). Do not ignore it.
 .env.production              # real prod secrets — never commit this
 .env.local
 appsettings.Local.json
