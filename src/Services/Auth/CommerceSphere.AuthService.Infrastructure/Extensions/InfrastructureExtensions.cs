@@ -4,8 +4,9 @@ using CommerceSphere.AuthService.Domain.Interfaces;
 using CommerceSphere.AuthService.Infrastructure.Data;
 using CommerceSphere.AuthService.Infrastructure.Email;
 using CommerceSphere.AuthService.Infrastructure.Kafka.Producers;
-using CommerceSphere.AuthService.Infrastructure.Keycloak;
 using CommerceSphere.AuthService.Infrastructure.Redis;
+using CommerceSphere.AuthService.Infrastructure.Sso;
+using CommerceSphere.AuthService.Infrastructure.Sso.Providers;
 using CommerceSphere.AuthService.Infrastructure.Services;
 using CommerceSphere.AuthService.Infrastructure.UnitOfWork;
 using CommerceSphere.Shared.Common.Idempotency;
@@ -45,18 +46,17 @@ public static class InfrastructureExtensions
         services.Configure<EmailOptions>(config.GetSection("Email"));
         services.AddScoped<IEmailService, EmailService>();
 
-        // --- Keycloak / SSO ---
-        var keycloakSection = config.GetSection("Keycloak");
-        services.Configure<KeycloakOptions>(keycloakSection);
+        // --- Social login (SSO) ---
+        // Direct OAuth 2.0 / OIDC to each provider — no external identity broker.
+        // SsoService orchestrates state/Redis and dispatches to the matching IOAuthProvider.
+        // Every provider is registered; only those with credentials configured are offered at runtime
+        // (SsoService filters by Sso:Providers:<name>), so enabling one is purely a config change.
+        services.Configure<SsoOptions>(config.GetSection("Sso"));
 
-        var keycloakOpts = keycloakSection.Get<KeycloakOptions>();
-        if (keycloakOpts is not null && !string.IsNullOrWhiteSpace(keycloakOpts.Authority))
-            keycloakOpts.Validate();
+        services.AddHttpClient<IOAuthProvider, GoogleOAuthProvider>(c => c.Timeout = TimeSpan.FromSeconds(15));
+        services.AddHttpClient<IOAuthProvider, FacebookOAuthProvider>(c => c.Timeout = TimeSpan.FromSeconds(15));
 
-        services.AddHttpClient<IKeycloakService, KeycloakService>(client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(15);
-        });
+        services.AddScoped<ISsoService, SsoService>();
 
         return services;
     }

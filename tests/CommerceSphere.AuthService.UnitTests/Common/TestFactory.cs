@@ -29,7 +29,7 @@ public sealed class TestFactory
             NullLogger<AuthManager>.Instance);
 
     public AccountManager BuildAccountManager() =>
-        new(Uow, Email.Object, NullLogger<AccountManager>.Instance);
+        new(Uow, Email.Object, Challenge.Object, BuildAuthManager(), NullLogger<AccountManager>.Instance);
 
     public TwoFactorManager BuildTwoFactorManager() =>
         new(Uow, Totp.Object, Challenge.Object, BuildAuthManager(), NullLogger<TwoFactorManager>.Instance);

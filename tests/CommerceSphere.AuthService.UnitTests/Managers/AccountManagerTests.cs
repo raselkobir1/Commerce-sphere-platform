@@ -73,7 +73,7 @@ public class AccountManagerTests
 
         await sut.ForgotPasswordAsync(new ForgotPasswordRequest("ghost@example.com"));
 
-        _f.Email.Verify(e => e.SendPasswordResetAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _f.Email.Verify(e => e.SendPasswordResetAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -85,7 +85,7 @@ public class AccountManagerTests
         await sut.ForgotPasswordAsync(new ForgotPasswordRequest("bob@example.com"));
 
         user.PasswordResetToken.Should().NotBeNullOrWhiteSpace();
-        _f.Email.Verify(e => e.SendPasswordResetAsync("bob@example.com", "Test", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        _f.Email.Verify(e => e.SendPasswordResetAsync("bob@example.com", "Test", It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

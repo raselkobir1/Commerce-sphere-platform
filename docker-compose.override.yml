@@ -4,7 +4,7 @@
 # Adds dev-only tools: Kafka UI, pgAdmin.
 #
 # To run ONLY infrastructure (services run locally with dotnet run):
-#   docker compose up -d postgres-auth postgres-product postgres-inventory postgres-cart redis kafka keycloak
+#   docker compose up -d postgres-auth postgres-product postgres-inventory postgres-cart redis kafka
 #
 # To override a single value locally without touching this file:
 #   create docker-compose.local.yml (gitignored) and use -f docker-compose.local.yml
@@ -30,19 +30,17 @@ services:
       Jwt__Audience: "${JWT_AUDIENCE:-CommerceSphereClients}"
       Jwt__ExpiryMinutes: "${JWT_EXPIRY_MINUTES:-60}"
       Kafka__BootstrapServers: "kafka:9092"
-      Keycloak__Authority: "http://keycloak:8080/realms/commerce-sphere"
-      # Browser-facing realm URL: the social-login redirect happens in the user's browser, which
-      # cannot resolve the internal "keycloak" host — it must use the host-published localhost:8080.
-      Keycloak__PublicAuthority: "http://localhost:8080/realms/commerce-sphere"
-      Keycloak__ClientId: "commerce-sphere-client"
-      Keycloak__ClientSecret: "${KEYCLOAK_CLIENT_SECRET}"
-      Keycloak__CallbackBaseUrl: "http://localhost:5000"
-      Keycloak__CallbackPath: "/api/auth/sso/callback"
-      Keycloak__Providers__0: "google"
-      Keycloak__Providers__1: "facebook"
+      # Social login (OAuth). Credentials come from each provider's developer console — supply them
+      # via .env.development to enable a provider; a blank ClientId/Secret hides that provider.
+      Sso__CallbackBaseUrl: "http://localhost:5000"
+      Sso__CallbackPath: "/api/auth/sso/callback"
       # SSO tokens may only be redirected back to these frontend origins (open-redirect guard).
-      Keycloak__AllowedRedirectUris__0: "http://localhost:4200"
-      Keycloak__AllowedRedirectUris__1: "http://localhost:4300"
+      Sso__AllowedRedirectUris__0: "http://localhost:4200"
+      Sso__AllowedRedirectUris__1: "http://localhost:4300"
+      Sso__Providers__google__ClientId: "${GOOGLE_CLIENT_ID:-}"
+      Sso__Providers__google__ClientSecret: "${GOOGLE_CLIENT_SECRET:-}"
+      Sso__Providers__facebook__ClientId: "${FACEBOOK_CLIENT_ID:-}"
+      Sso__Providers__facebook__ClientSecret: "${FACEBOOK_CLIENT_SECRET:-}"
       Email__SmtpHost: "mailpit"
       Email__SmtpPort: "1025"
       Email__AppBaseUrl: "http://localhost:5000"
@@ -132,19 +130,9 @@ services:
     ports:
       - "5438:5432"
 
-  postgres-keycloak:
-    ports:
-      - "5437:5432"
-
   redis:
     ports:
       - "6379:6379"
-
-  keycloak:
-    env_file: .env.development
-    environment:
-      KEYCLOAK_ADMIN: "${KEYCLOAK_ADMIN:-admin}"
-      KEYCLOAK_ADMIN_PASSWORD: "${KEYCLOAK_ADMIN_PASSWORD}"
 
   # ─── Dev tools ─────────────────────────────────────────────────────────────
 

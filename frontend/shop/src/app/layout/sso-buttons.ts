@@ -1,7 +1,9 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { Sso } from '../core/sso';
+import { Sso, SsoProvider } from '../core/sso';
 
-// Renders a "continue with <provider>" button for each enabled social provider.
+// Renders a "continue with <provider>" button for every supported social provider.
+// Every provider is always shown; one whose credentials aren't configured yet is rendered
+// disabled with a hint, so the buttons appear in dev and light up once credentials are set.
 // Drop <app-sso-buttons /> on the login / register pages.
 @Component({
   selector: 'app-sso-buttons',
@@ -9,31 +11,55 @@ import { Sso } from '../core/sso';
     @if (providers().length) {
       <div class="sso-divider"><span>or continue with</span></div>
       <div class="sso-grid">
-        @for (p of providers(); track p) {
-          <button type="button" class="btn sso-btn" (click)="sso.start(p)">
-            <span class="sso-ico">{{ icon(p) }}</span> {{ label(p) }}
+        @for (p of providers(); track p.name) {
+          <button
+            type="button"
+            class="btn sso-btn"
+            [disabled]="!p.enabled"
+            [title]="p.enabled ? 'Continue with ' + label(p.name) : label(p.name) + ' login is not configured yet'"
+            (click)="p.enabled && sso.start(p.name)"
+          >
+            <span class="sso-ico">{{ icon(p.name) }}</span> {{ label(p.name) }}
+            @if (!p.enabled) {
+              <span class="sso-soon">soon</span>
+            }
           </button>
         }
       </div>
     }
   `,
+  styles: [
+    `
+      .sso-btn[disabled] {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      .sso-soon {
+        margin-left: 0.4rem;
+        font-size: 0.7em;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        opacity: 0.7;
+      }
+    `,
+  ],
 })
 export class SsoButtons implements OnInit {
   sso = inject(Sso);
-  providers = signal<string[]>([]);
+  providers = signal<SsoProvider[]>([]);
 
   ngOnInit(): void {
     this.sso.providers().subscribe({
       next: (p) => this.providers.set(p),
-      error: () => this.providers.set([]), // SSO not available — just hide the buttons
+      error: () => this.providers.set([]), // SSO endpoint unreachable — hide the section
     });
   }
 
-  icon(p: string): string {
-    return { google: 'G', github: '', facebook: 'f' }[p.toLowerCase()] ?? '•';
+  icon(name: string): string {
+    return { google: 'G', facebook: 'f' }[name.toLowerCase()] ?? '•';
   }
 
-  label(p: string): string {
-    return p.charAt(0).toUpperCase() + p.slice(1);
+  label(name: string): string {
+    return name.charAt(0).toUpperCase() + name.slice(1);
   }
 }

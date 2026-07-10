@@ -8,7 +8,7 @@ Event-driven e-commerce microservices built on .NET 8. Four domain services comm
 
 | Service | Responsibility |
 |---|---|
-| **Auth** | Registration, JWT login, refresh tokens, SSO via Keycloak (Google / GitHub / Facebook) |
+| **Auth** | Registration, JWT login, refresh tokens, social login via direct OAuth (Google / Facebook) |
 | **Product** | Product catalog — CRUD, SKU, pricing |
 | **Inventory** | Stock quantities, reservations per SKU |
 | **Cart** | Shopping cart, checkout saga with Inventory |
@@ -52,7 +52,6 @@ That is the only command needed. Wait ~30 seconds for health checks to pass.
 | Product Swagger | http://localhost:5095/swagger | — |
 | Inventory Swagger | http://localhost:5035/swagger | — |
 | Cart Swagger | http://localhost:5236/swagger | — |
-| Keycloak Admin | http://localhost:8080 | `admin` / `admin_pass` |
 | Kafka UI | http://localhost:8090 | — |
 | pgAdmin | http://localhost:5050 | `admin@commercesphere.dev` / `admin` |
 
@@ -64,7 +63,6 @@ That is the only command needed. Wait ~30 seconds for health checks to pass.
 | product\_db | localhost | 5434 | commerce | commerce\_pass |
 | inventory\_db | localhost | 5435 | commerce | commerce\_pass |
 | cart\_db | localhost | 5436 | commerce | commerce\_pass |
-| keycloak\_db | localhost | 5437 | commerce | commerce\_pass |
 | Redis | localhost | 6379 | — | — |
 
 ### 4. Hybrid mode — infra in Docker, services locally
@@ -73,7 +71,7 @@ Use this when iterating on a single service and want fast hot-reload without reb
 
 ```bash
 # Start only infrastructure
-docker compose up -d postgres-auth postgres-product postgres-inventory postgres-cart redis kafka keycloak
+docker compose up -d postgres-auth postgres-product postgres-inventory postgres-cart redis kafka
 
 # Run a service locally (picks up appsettings.Development.json automatically)
 dotnet run --project src/Services/Auth/CommerceSphere.AuthService.API
@@ -127,10 +125,12 @@ JWT_ISSUER=CommerceSphere
 JWT_AUDIENCE=CommerceSphereClients
 JWT_EXPIRY_MINUTES=60
 
-KEYCLOAK_ADMIN=admin
-KEYCLOAK_ADMIN_PASSWORD=<strong-random-password>
-# Get from Keycloak Admin → Clients → commerce-sphere-client → Credentials
-KEYCLOAK_CLIENT_SECRET=<from-keycloak-admin>
+# Social login (OAuth). Leave a pair blank to keep that provider disabled.
+# Register https://your-domain.com/api/auth/sso/callback in each provider's console.
+GOOGLE_CLIENT_ID=<from-google-cloud-console>
+GOOGLE_CLIENT_SECRET=<from-google-cloud-console>
+FACEBOOK_CLIENT_ID=<from-facebook-developers>
+FACEBOOK_CLIENT_SECRET=<from-facebook-developers>
 ```
 
 ### 2. Deploy
@@ -142,20 +142,13 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 The production overlay:
 - Sets `ASPNETCORE_ENVIRONMENT=Production` — Swagger is **off**, error details are minimal
 - Exposes **only port 5000** (API Gateway) to the host — all DBs, Redis, and Kafka stay on the internal Docker network
-- Runs Keycloak in `start` mode (production-hardened, requires TLS)
 
-### 3. Keycloak TLS in production
+### 3. Social login (OAuth) in production
 
-In production, Keycloak expects to sit behind a TLS-terminating reverse proxy (Nginx, Caddy, Traefik). Update `docker-compose.prod.yml`:
-
-```yaml
-keycloak:
-  environment:
-    KC_PROXY: edge
-    KC_HOSTNAME: auth.your-domain.com
-```
-
-Then point your reverse proxy at the Keycloak container on port 8080 and terminate TLS externally.
+Social login talks directly to each provider — there is no identity broker to run. In each provider's
+developer console, register your production callback URL (`https://your-domain.com/api/auth/sso/callback`)
+and copy the client ID/secret into `.env.production`. Set `Sso__CallbackBaseUrl` and
+`Sso__AllowedRedirectUris__*` in `docker-compose.prod.yml` to your real origins.
 
 ### 4. CI/CD tip
 
@@ -167,8 +160,8 @@ In automated pipelines (GitHub Actions, GitLab CI) inject the production secrets
   env:
     POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
     JWT_SECRET: ${{ secrets.JWT_SECRET }}
-    KEYCLOAK_CLIENT_SECRET: ${{ secrets.KEYCLOAK_CLIENT_SECRET }}
-    KEYCLOAK_ADMIN_PASSWORD: ${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}
+    GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+    FACEBOOK_CLIENT_SECRET: ${{ secrets.FACEBOOK_CLIENT_SECRET }}
 ```
 
 ---
@@ -246,15 +239,13 @@ src/
       CommerceSphere.AuthService.API           ← Controllers, DI wiring
       CommerceSphere.AuthService.Application   ← Managers, DTOs, validators
       CommerceSphere.AuthService.Domain        ← Entities, repo interfaces
-      CommerceSphere.AuthService.Infrastructure ← EF Core, Kafka, Redis, Keycloak
+      CommerceSphere.AuthService.Infrastructure ← EF Core, Kafka, Redis, OAuth SSO
     Product/   (same four-layer structure)
     Inventory/ (same four-layer structure)
     Cart/      (same four-layer structure)
   Shared/
     CommerceSphere.Shared.Common     ← ApiResponse<T>, exceptions, middleware
     CommerceSphere.Shared.Contracts  ← Kafka event record types
-keycloak/
-  realm-export.json                  ← Auto-imported on first Keycloak boot
 docker-compose.yml                   ← Base: infrastructure + services
 docker-compose.override.yml          ← Dev overlay (auto-loaded)
 docker-compose.prod.yml              ← Production overlay (explicit -f)

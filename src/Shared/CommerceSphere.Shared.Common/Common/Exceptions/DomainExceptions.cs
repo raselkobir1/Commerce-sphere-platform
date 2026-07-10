@@ -28,7 +28,7 @@ public class ConflictException(string message) : Exception(message);
 public class ConcurrencyException(string message = "The record was modified by another user. Please refresh and try again.")
     : Exception(message);
 
-// Thrown when an SSO flow step fails (invalid/expired state, bad code, Keycloak token error).
+// Thrown when an SSO flow step fails (invalid/expired state, bad code, provider token error).
 // Maps to HTTP 400 — the client must restart the login flow from /sso/login/{provider}.
 public class SsoException(string message) : Exception(message);
 

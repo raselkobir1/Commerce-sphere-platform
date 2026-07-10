@@ -28,13 +28,3 @@ services:
   redis:
     ports:
       - "6379:6379"
-
-  # Expose Keycloak admin console on localhost for hybrid local dev.
-  # Access the admin UI at http://localhost:8080 (admin / admin_pass).
-  keycloak:
-    ports:
-      - "8080:8080"
-
-  postgres-keycloak:
-    ports:
-      - "5437:5432"

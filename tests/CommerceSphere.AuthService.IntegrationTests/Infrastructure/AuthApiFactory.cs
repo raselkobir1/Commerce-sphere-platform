@@ -13,7 +13,7 @@ using Xunit;
 namespace CommerceSphere.AuthService.IntegrationTests.Infrastructure;
 
 // Boots the real Auth API pipeline (controllers, middleware, EF Core, JWT auth) against
-// throwaway PostgreSQL + Redis containers. Only the external edges — SMTP, Kafka, Keycloak —
+// throwaway PostgreSQL + Redis containers. Only the external edges — SMTP, Kafka, SSO providers —
 // are faked, so the request → manager → repository → database path is exercised for real.
 public sealed class AuthApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
@@ -46,9 +46,7 @@ public sealed class AuthApiFactory : WebApplicationFactory<Program>, IAsyncLifet
         Environment.SetEnvironmentVariable("Jwt__Issuer", "CommerceSphere");
         Environment.SetEnvironmentVariable("Jwt__Audience", "CommerceSphereClients");
         Environment.SetEnvironmentVariable("Jwt__ExpiryMinutes", "60");
-        // Blank authority → KeycloakOptions.Validate() is skipped; the service itself is faked.
-        Environment.SetEnvironmentVariable("Keycloak__Authority", "");
-        Environment.SetEnvironmentVariable("Keycloak__ClientSecret", "test-secret");
+        // SSO is faked below (FakeSsoService), so no real provider credentials are needed.
         Environment.SetEnvironmentVariable("Kafka__BootstrapServers", "localhost:9092");
         Environment.SetEnvironmentVariable("Email__SmtpHost", "localhost");
         Environment.SetEnvironmentVariable("Email__AppBaseUrl", "http://localhost");
@@ -80,8 +78,8 @@ public sealed class AuthApiFactory : WebApplicationFactory<Program>, IAsyncLifet
             services.RemoveAll<IUserEventProducer>();
             services.AddSingleton<IUserEventProducer>(Events);
 
-            services.RemoveAll<IKeycloakService>();
-            services.AddSingleton<IKeycloakService, FakeKeycloakService>();
+            services.RemoveAll<ISsoService>();
+            services.AddSingleton<ISsoService, FakeSsoService>();
         });
     }
 }

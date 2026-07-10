@@ -10,7 +10,6 @@ volumes:
   pgdata-inventory:
   pgdata-cart:
   pgdata-notification:
-  pgdata-keycloak:
   redis-data:
   kafka-data:
 
@@ -158,74 +157,6 @@ services:
       retries: 10
       start_period: 30s
 
-  # Keycloak's own PostgreSQL — separate from auth_db to avoid schema conflicts.
-  postgres-keycloak:
-    image: postgres:16-alpine
-    container_name: postgres-keycloak
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: keycloak_db
-      POSTGRES_USER: commerce
-      POSTGRES_PASSWORD: commerce_pass
-    volumes:
-      - pgdata-keycloak:/var/lib/postgresql/data
-    networks:
-      - commerce-net
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U commerce -d keycloak_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Keycloak — acts as the Identity Broker for all social logins (Google, GitHub, Facebook).
-  # After a social login, Keycloak redirects back to Auth Service /api/auth/sso/callback with a code.
-  #
-  # The realm "commerce-sphere" is auto-imported from keycloak/realm-export.json on first boot
-  # (--import-realm flag). The import is skipped if the realm already exists.
-  #
-  # Before first boot you MUST:
-  #   1. Replace GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET in realm-export.json (or in the Keycloak
-  #      admin console after startup) with real credentials from console.cloud.google.com.
-  #   2. Do the same for GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET (github.com → Settings → OAuth Apps).
-  #   3. Do the same for FACEBOOK_APP_ID / FACEBOOK_APP_SECRET (developers.facebook.com).
-  #   4. Replace CHANGE_ME_IN_KEYCLOAK_ADMIN (client secret) in Keycloak admin UI and set the same
-  #      value in Keycloak__ClientSecret env var below (or in a .env file / secrets manager).
-  keycloak:
-    image: quay.io/keycloak/keycloak:24.0
-    container_name: keycloak
-    restart: unless-stopped
-    # start-dev enables HTTP (no TLS required) and disables hostname validation — suitable for local dev.
-    # --import-realm auto-imports keycloak/realm-export.json if the realm does not yet exist.
-    # For production use `start` with a proper TLS certificate and hostname configuration.
-    command: start-dev --import-realm
-    volumes:
-      # Mount the realm export read-only; Keycloak imports it on first start, skips on subsequent.
-      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
-    environment:
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres-keycloak:5432/keycloak_db
-      KC_DB_USERNAME: commerce
-      KC_DB_PASSWORD: commerce_pass
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin_pass
-      KC_HOSTNAME_STRICT: "false"
-      KC_HTTP_ENABLED: "true"
-    ports:
-      - "8080:8080"
-    depends_on:
-      postgres-keycloak:
-        condition: service_healthy
-    networks:
-      - commerce-net
-    healthcheck:
-      # Keycloak's ubi9-minimal image has no curl/wget — use bash /dev/tcp to HTTP-check
-      # the /realms/master endpoint, which returns 200 only once Keycloak is fully started.
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /realms/master HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3"]
-      interval: 20s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
-
   # ─── Microservices ────────────────────────────────────────────
 
   auth-service:
@@ -244,21 +175,22 @@ services:
       Jwt__Audience: "CommerceSphereClients"
       Jwt__ExpiryMinutes: "60"
       Kafka__BootstrapServers: "kafka:9092"
-      Keycloak__Authority: "http://keycloak:8080/realms/commerce-sphere"
-      Keycloak__ClientId: "commerce-sphere-client"
-      Keycloak__ClientSecret: "CommerceSphereDevSecret2024!"
-      Keycloak__CallbackBaseUrl: "http://localhost:5000"
-      Keycloak__CallbackPath: "/api/auth/sso/callback"
-      Keycloak__Providers__0: "google"
-      Keycloak__Providers__1: "facebook"
+      # Social login (OAuth) — provider credentials come from each provider's developer console.
+      # Fill these in (e.g. via .env / secrets) to enable a provider; blank = provider hidden.
+      Sso__CallbackBaseUrl: "http://localhost:5000"
+      Sso__CallbackPath: "/api/auth/sso/callback"
+      Sso__AllowedRedirectUris__0: "http://localhost:4200"
+      Sso__AllowedRedirectUris__1: "http://localhost:4300"
+      Sso__Providers__google__ClientId: "${GOOGLE_CLIENT_ID:-}"
+      Sso__Providers__google__ClientSecret: "${GOOGLE_CLIENT_SECRET:-}"
+      Sso__Providers__facebook__ClientId: "${FACEBOOK_CLIENT_ID:-}"
+      Sso__Providers__facebook__ClientSecret: "${FACEBOOK_CLIENT_SECRET:-}"
     depends_on:
       postgres-auth:
         condition: service_healthy
       redis:
         condition: service_healthy
       kafka:
-        condition: service_healthy
-      keycloak:
         condition: service_healthy
     networks:
       - commerce-net

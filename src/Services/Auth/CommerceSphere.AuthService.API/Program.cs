@@ -5,7 +5,6 @@ using CommerceSphere.AuthService.Application.Validators;
 using AccountManager = CommerceSphere.AuthService.Application.Managers.AccountManager;
 using TwoFactorManager = CommerceSphere.AuthService.Application.Managers.TwoFactorManager;
 using OtpManager = CommerceSphere.AuthService.Application.Managers.OtpManager;
-using CommerceSphere.AuthService.Infrastructure.Keycloak;
 using CommerceSphere.AuthService.Infrastructure.Extensions;
 using CommerceSphere.Shared.Common.Authorization;
 using CommerceSphere.Shared.Common.Extensions;
@@ -67,7 +66,7 @@ builder.Services.AddScoped<IRbacManager, RbacManager>();
 builder.Services.AddScoped<ITwoFactorManager, TwoFactorManager>();
 builder.Services.AddScoped<IOtpManager, OtpManager>();
 
-// Register the SSO manager — coordinates Keycloak token exchange and local user creation.
+// Register the SSO manager — coordinates the OAuth token exchange and local user creation.
 builder.Services.AddScoped<ISsoManager, SsoManager>();
 
 builder.Services.AddFluentValidationAutoValidation();

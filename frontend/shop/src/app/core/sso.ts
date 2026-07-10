@@ -8,14 +8,20 @@ interface SsoLoginUrl {
   state: string;
 }
 
-// Social login (Google / GitHub / Facebook) brokered by Keycloak.
+// One provider in the catalog: always listed; `enabled` is false until its credentials are configured.
+export interface SsoProvider {
+  name: string;
+  enabled: boolean;
+}
+
+// Social login (Google / Facebook) via direct OAuth to each provider.
 @Injectable({ providedIn: 'root' })
 export class Sso {
   private api = inject(Api);
 
-  // Providers the backend has enabled — used to render the buttons.
-  providers(): Observable<string[]> {
-    return this.api.get<string[]>('/api/auth/sso/providers');
+  // Full catalog of supported providers (each with an `enabled` flag) — used to render the buttons.
+  providers(): Observable<SsoProvider[]> {
+    return this.api.get<SsoProvider[]>('/api/auth/sso/providers');
   }
 
   // Ask the backend for the provider's authorization URL, then send the browser there.

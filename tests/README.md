@@ -46,7 +46,7 @@ by [Testcontainers](https://dotnet.testcontainers.org/). Only the external edges
 - `FakeEmailService` — captures verification tokens, reset tokens, and OTP codes so tests can read
   what would have been emailed (no SMTP).
 - `FakeUserEventProducer` — swallows the `user-created` Kafka event (no broker).
-- `FakeKeycloakService` — returns a static provider list (no Keycloak server).
+- `FakeSsoService` — returns a static provider list (no calls to real OAuth providers).
 
 Notes:
 - The schema is created with `RelationalDatabaseCreator.CreateTablesAsync()` from the current EF

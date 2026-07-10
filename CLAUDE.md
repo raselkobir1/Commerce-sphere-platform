@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 docker compose up -d
 
 # Infra only — then run services locally with `dotnet run`
-docker compose up -d postgres-auth postgres-product postgres-inventory postgres-cart redis kafka keycloak
+docker compose up -d postgres-auth postgres-product postgres-inventory postgres-cart redis kafka
 ```
 
 ### Docker — Production

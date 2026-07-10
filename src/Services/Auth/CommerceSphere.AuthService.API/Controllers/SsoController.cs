@@ -5,13 +5,13 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace CommerceSphere.AuthService.API.Controllers;
 
-// SSO endpoints handle the two-step Keycloak-brokered social login flow:
+// SSO endpoints handle the two-step OAuth social login flow (direct to each provider):
 //
 //   Step 1 — /sso/login/{provider}
-//     Client calls this to get the Keycloak authorization URL, then redirects the browser there.
-//     Keycloak shows the social provider's login page (Google, GitHub, etc.).
+//     Client calls this to get the provider's authorization URL, then redirects the browser there.
+//     The provider shows its own login/consent page (Google, Facebook).
 //
-//   Step 2 — /sso/callback (called by the browser after Keycloak redirects back)
+//   Step 2 — /sso/callback (called by the browser after the provider redirects back)
 //     We exchange the authorization code for user info, create/link a local account,
 //     issue our JWT, and redirect the browser to the client's redirectUri with the tokens.
 [ApiController]
@@ -20,7 +20,7 @@ namespace CommerceSphere.AuthService.API.Controllers;
 public class SsoController(ISsoManager ssoManager) : ControllerBase
 {
     // Returns the list of social providers available for SSO login.
-    // Clients use this to render the "Login with Google / GitHub / ..." buttons.
+    // Clients use this to render the "Login with Google / Facebook / ..." buttons.
     [HttpGet("providers")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     public IActionResult GetProviders()
@@ -29,14 +29,14 @@ public class SsoController(ISsoManager ssoManager) : ControllerBase
         return Ok(ApiResponse<object>.Ok(providers, "Available SSO providers"));
     }
 
-    // Step 1: Generate the Keycloak authorization URL for the requested provider.
+    // Step 1: Generate the provider's OAuth authorization URL for the requested provider.
     //
     // The client should redirect the user's browser to AuthorizationUrl.
     // After the social login, the browser will land on /sso/callback.
     //
     // redirectUri — the URL of YOUR frontend application that should receive the
     //   tokens after login (e.g. "http://myapp.com/auth/callback").
-    //   This URL must be configured as an allowed redirect in the Keycloak client settings.
+    //   This origin must be listed in Sso:AllowedRedirectUris (open-redirect guard).
     [HttpGet("login/{provider}")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
@@ -52,15 +52,15 @@ public class SsoController(ISsoManager ssoManager) : ControllerBase
             HttpContext.GetCorrelationId()));
     }
 
-    // Step 2: Keycloak redirects the browser here after the social login completes.
+    // Step 2: The provider redirects the browser here after the social login completes.
     //
-    // This endpoint is called by the USER'S BROWSER (not by Keycloak server-to-server).
-    // Keycloak appends either:
+    // This endpoint is called by the USER'S BROWSER (not by the provider server-to-server).
+    // The provider appends either:
     //   Success: ?code=...&state=...
     //   Failure: ?error=access_denied&error_description=...&state=...
     //
     // On success: redirects the browser to the client's redirectUri with tokens in query params.
-    // On user-deny / Keycloak error: redirects to redirectUri with ?sso_error=... so the
+    // On user-deny / provider error: redirects to redirectUri with ?sso_error=... so the
     //   frontend can show a helpful message instead of a blank page.
     //
     // SECURITY NOTE: tokens in query parameters are visible in browser history and server logs.
@@ -76,7 +76,7 @@ public class SsoController(ISsoManager ssoManager) : ControllerBase
         CancellationToken ct)
     {
         // Handle the case where the user clicked "Deny" on the social provider's consent screen,
-        // or Keycloak itself encountered an error during the identity provider flow.
+        // or the provider itself encountered an error during the OAuth flow.
         if (!string.IsNullOrWhiteSpace(error))
         {
             var description = error_description ?? error;

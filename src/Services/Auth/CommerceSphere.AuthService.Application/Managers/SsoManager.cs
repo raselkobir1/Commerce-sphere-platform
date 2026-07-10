@@ -10,27 +10,25 @@ using Microsoft.Extensions.Logging;
 namespace CommerceSphere.AuthService.Application.Managers;
 
 // Orchestrates the SSO login flow:
-//   1. GetLoginUrlAsync   → delegates to KeycloakService to build the Keycloak auth URL
-//   2. HandleCallbackAsync → exchanges the Keycloak code for user info, then creates/links
+//   1. GetLoginUrlAsync   → delegates to SsoService to build the provider's OAuth auth URL
+//   2. HandleCallbackAsync → exchanges the provider code for user info, then creates/links
 //      a local account and issues our own JWT — same token format as password login
 public class SsoManager(
     IUnitOfWork uow,
     IJwtService jwtService,
-    IKeycloakService keycloakService,
+    ISsoService ssoService,
     IUserEventProducer eventProducer,
     ILogger<SsoManager> logger) : ISsoManager
 {
     public Task<SsoLoginUrlResponse> GetLoginUrlAsync(
         string provider, string redirectUri, CancellationToken ct = default)
     {
-        ValidateProvider(provider);
-
         if (string.IsNullOrWhiteSpace(redirectUri))
             throw new BusinessException("RedirectUri is required for SSO login.");
 
-        // KeycloakService generates a random state token, stores { provider, redirectUri }
-        // in Redis, and returns the full Keycloak authorization URL.
-        return keycloakService.BuildLoginUrlAsync(provider, redirectUri, ct);
+        // SsoService validates the provider, generates a random state token, stores
+        // { provider, redirectUri } in Redis, and returns the full OAuth authorization URL.
+        return ssoService.BuildLoginUrlAsync(provider, redirectUri, ct);
     }
 
     public async Task<SsoCallbackResult> HandleCallbackAsync(
@@ -42,9 +40,9 @@ public class SsoManager(
         if (string.IsNullOrWhiteSpace(state))
             throw new BusinessException("State parameter is missing — possible CSRF attempt.");
 
-        // Exchange the authorization code with Keycloak and retrieve the verified user identity.
-        // KeycloakService also validates the state token against Redis to prevent CSRF.
-        var (userInfo, provider, redirectUri) = await keycloakService.ProcessCallbackAsync(code, state, ct);
+        // Exchange the authorization code with the provider and retrieve the verified user identity.
+        // SsoService also validates the state token against Redis to prevent CSRF.
+        var (userInfo, provider, redirectUri) = await ssoService.ProcessCallbackAsync(code, state, ct);
 
         logger.LogInformation(
             "SSO callback received. Provider: {Provider}, Email: {Email}, Sub: {Sub}, CorrelationId: {CorrelationId}",
@@ -147,23 +145,12 @@ public class SsoManager(
         return new SsoCallbackResult(tokenResponse, redirectUri);
     }
 
-    public IReadOnlyList<string> GetAvailableProviders() =>
-        keycloakService.GetConfiguredProviders();
+    public IReadOnlyList<SsoProviderInfo> GetAvailableProviders() =>
+        ssoService.GetProviders();
 
     // Non-destructive lookup — used to send the user back to the correct frontend URL on error.
     public Task<string?> GetRedirectUriForErrorAsync(string state, CancellationToken ct = default) =>
-        keycloakService.PeekRedirectUriAsync(state, ct);
-
-    private void ValidateProvider(string provider)
-    {
-        if (string.IsNullOrWhiteSpace(provider))
-            throw new BusinessException("Provider name is required.");
-
-        var available = keycloakService.GetConfiguredProviders();
-        if (!available.Contains(provider.ToLowerInvariant()))
-            throw new BusinessException(
-                $"Provider '{provider}' is not configured. Available: {string.Join(", ", available)}.");
-    }
+        ssoService.PeekRedirectUriAsync(state, ct);
 
     // Checks for a unique-constraint violation without importing EF Core (Application layer
     // must not depend on Infrastructure). Postgres code 23505 = unique_violation.
