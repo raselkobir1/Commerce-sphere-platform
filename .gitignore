@@ -43,12 +43,16 @@ coverage/
 *.sln.iml
 
 # ── VS Code ───────────────────────────────────────────────────────────────────
-.vscode/
+# Ignore .vscode CONTENTS (use /* not / — a trailing-slash dir exclude can't be undone by !negations
+# below, since git won't re-include a file whose parent directory is excluded).
+.vscode/*
 !.vscode/extensions.json
 !.vscode/launch.json
 !.vscode/tasks.json
 # Shared workspace settings (hides bin/obj in the Explorer, search excludes) — intentionally tracked.
 !.vscode/settings.json
+# Nested (per-app) .vscode dirs stay local — only the root workspace settings are shared.
+frontend/.vscode/
 
 # ── Visual Studio ─────────────────────────────────────────────────────────────
 .vs/

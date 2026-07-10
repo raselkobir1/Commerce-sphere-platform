@@ -1,0 +1,22 @@
+{
+  // Hide .NET build output (bin/obj) from the Explorer, like Visual Studio does by default.
+  // To SHOW them again, flip the value to false (or delete the line) — VS Code updates instantly.
+  "files.exclude": {
+    "**/bin": true,
+    "**/obj": true
+  },
+
+  // Keep build output out of search results and quick-open too.
+  "search.exclude": {
+    "**/bin": true,
+    "**/obj": true,
+    "**/node_modules": true,
+    "**/dist": true
+  },
+
+  // Don't watch build output for file changes (less CPU, fewer noisy reloads).
+  "files.watcherExclude": {
+    "**/bin/**": true,
+    "**/obj/**": true
+  }
+}
