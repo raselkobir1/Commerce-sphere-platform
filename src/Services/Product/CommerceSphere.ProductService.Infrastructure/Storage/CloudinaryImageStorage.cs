@@ -53,8 +53,20 @@ public class CloudinaryImageStorage(
         if (!doc.RootElement.TryGetProperty("secure_url", out var url) || url.GetString() is not { } secureUrl)
             throw new BusinessException("Image upload did not return a URL. Please try again.");
 
-        logger.LogInformation("Image uploaded to Cloudinary: {Url}", secureUrl);
-        return secureUrl;
+        var deliveryUrl = ApplyDeliveryTransformation(secureUrl);
+        logger.LogInformation("Image uploaded to Cloudinary: {Url}", deliveryUrl);
+        return deliveryUrl;
+    }
+
+    // Bake the delivery transformation (f_auto,q_auto) into the URL so every consumer automatically
+    // gets an optimally-formatted, quality-tuned image. Inserts it right after "/upload/".
+    private string ApplyDeliveryTransformation(string secureUrl)
+    {
+        var t = _opts.DeliveryTransformation;
+        const string marker = "/upload/";
+        if (string.IsNullOrWhiteSpace(t) || !secureUrl.Contains(marker))
+            return secureUrl;
+        return secureUrl.Replace(marker, $"{marker}{t}/");
     }
 
     // Adds a text field. Content-Disposition names are set explicitly WITH QUOTES — .NET's default

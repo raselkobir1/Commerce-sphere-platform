@@ -20,6 +20,11 @@ public class CloudinaryOptions
     // The incoming-transformation string applied before the asset is stored (e.g. "c_limit,w_1600,h_1600,q_auto:good").
     public string Transformation => $"c_limit,w_{MaxWidth},h_{MaxHeight},q_{Quality}";
 
+    // Delivery transformation baked into every returned URL so it is ALWAYS applied wherever the
+    // image is shown: f_auto serves WebP/AVIF to supporting browsers, q_auto tunes quality per image.
+    // Set to blank to disable.
+    public string DeliveryTransformation { get; set; } = "f_auto,q_auto";
+
     public bool IsConfigured =>
         !string.IsNullOrWhiteSpace(CloudName) &&
         !string.IsNullOrWhiteSpace(ApiKey) &&
