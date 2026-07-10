@@ -4,12 +4,13 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Auth } from '../core/auth';
 import { Chat } from '../core/chat';
+import { TypingIndicator } from './typing-indicator';
 
 // Floating live-support chat, pinned to the bottom-right of every page. Click the launcher to open a
 // panel and chat with a shop support agent in real time. Requires the customer to be signed in.
 @Component({
   selector: 'app-chat-widget',
-  imports: [FormsModule, RouterLink, DatePipe],
+  imports: [FormsModule, RouterLink, DatePipe, TypingIndicator],
   template: `
     <!-- Launcher -->
     <button class="chat-fab" type="button" (click)="chat.toggle()" [attr.aria-label]="chat.open() ? 'Close chat' : 'Open chat'">
@@ -49,6 +50,7 @@ import { Chat } from '../core/chat';
                 </div>
               </div>
             }
+            <app-typing-indicator [active]="chat.otherTyping()" who="Support" />
           </div>
 
           <form class="chat-input" (ngSubmit)="submit()">
@@ -59,6 +61,7 @@ import { Chat } from '../core/chat';
               placeholder="Type a message…"
               autocomplete="off"
               [disabled]="chat.sending()"
+              (ngModelChange)="chat.notifyTyping()"
             />
             <button class="btn btn-primary btn-sm" type="submit" [disabled]="chat.sending() || !draft.trim()">Send</button>
           </form>
@@ -120,9 +123,10 @@ export class ChatWidget {
   private body = viewChild<ElementRef<HTMLDivElement>>('body');
 
   constructor() {
-    // Auto-scroll to the newest message whenever the list changes.
+    // Auto-scroll to the newest message (or the typing indicator) whenever they change.
     effect(() => {
       this.chat.messages();
+      this.chat.otherTyping();
       queueMicrotask(() => {
         const el = this.body()?.nativeElement;
         if (el) el.scrollTop = el.scrollHeight;

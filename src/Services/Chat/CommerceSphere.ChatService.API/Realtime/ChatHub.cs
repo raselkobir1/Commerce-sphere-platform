@@ -1,4 +1,5 @@
 using CommerceSphere.ChatService.API.Auth;
+using CommerceSphere.ChatService.Domain.Entities;
 using CommerceSphere.ChatService.Domain.Interfaces.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
@@ -44,4 +45,21 @@ public class ChatHub(IConversationRepository conversations) : Hub
 
     public Task LeaveConversation(Guid conversationId) =>
         Groups.RemoveFromGroupAsync(Context.ConnectionId, ConversationGroup(conversationId));
+
+    // Broadcast an ephemeral "typing" signal to the other participants of a conversation (everyone
+    // in the group except the sender). Not persisted — it's a transient presence hint. The other
+    // side receives a "Typing" event with who is typing and whether they started or stopped.
+    public Task Typing(Guid conversationId, bool isTyping)
+    {
+        var caller = Context.User!.ToChatUser();
+        var payload = new
+        {
+            conversationId,
+            senderRole = caller.IsSupport ? SenderRole.Support : SenderRole.Customer,
+            senderName = caller.Name,
+            isTyping
+        };
+        return Clients.GroupExcept(ConversationGroup(conversationId), Context.ConnectionId)
+            .SendAsync("Typing", payload);
+    }
 }

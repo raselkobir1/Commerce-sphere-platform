@@ -36,8 +36,13 @@ export class Chat {
   activeId = signal<string | null>(null);
   connected = signal(false);
   sending = signal(false);
+  // True while the customer in the open thread is typing.
+  otherTyping = signal(false);
 
   private hub: HubConnection | null = null;
+  private lastTypingSentAt = 0;
+  private stopTypingTimer: ReturnType<typeof setTimeout> | null = null;
+  private clearTypingTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Called when the Support Chat page loads.
   async init(): Promise<void> {
@@ -56,6 +61,7 @@ export class Chat {
   // clears the server-side unread badge (and broadcasts a ConversationUpdated we pick up).
   async openConversation(id: string): Promise<void> {
     this.activeId.set(id);
+    this.otherTyping.set(false);   // reset the indicator when switching threads
     if (this.hub && this.connected()) {
       try { await this.hub.invoke('JoinConversation', id); } catch { /* ignore */ }
     }
@@ -70,6 +76,7 @@ export class Chat {
     const content = text.trim();
     if (!id || !content) return;
 
+    this.stopTyping();
     this.sending.set(true);
     try {
       const saved = await this.firstValue(
@@ -81,12 +88,44 @@ export class Chat {
     }
   }
 
+  // Call on each keystroke in the reply box — throttled "typing" signal to the customer.
+  notifyTyping(): void {
+    const id = this.activeId();
+    if (!this.hub || !this.connected() || !id) return;
+
+    const now = Date.now();
+    if (now - this.lastTypingSentAt > 2000) {
+      this.lastTypingSentAt = now;
+      this.hub.invoke('Typing', id, true).catch(() => {});
+    }
+    if (this.stopTypingTimer) clearTimeout(this.stopTypingTimer);
+    this.stopTypingTimer = setTimeout(() => this.stopTyping(), 2500);
+  }
+
+  private stopTyping(): void {
+    if (this.stopTypingTimer) { clearTimeout(this.stopTypingTimer); this.stopTypingTimer = null; }
+    this.lastTypingSentAt = 0;
+    const id = this.activeId();
+    if (this.hub && this.connected() && id) this.hub.invoke('Typing', id, false).catch(() => {});
+  }
+
+  private onTyping(e: { conversationId: string; senderRole: string; isTyping: boolean }): void {
+    // Only reflect typing for the customer in the thread the agent is viewing.
+    if (e.conversationId !== this.activeId() || e.senderRole !== 'Customer') return;
+    if (this.clearTypingTimer) { clearTimeout(this.clearTypingTimer); this.clearTypingTimer = null; }
+    this.otherTyping.set(e.isTyping);
+    if (e.isTyping) this.clearTypingTimer = setTimeout(() => this.otherTyping.set(false), 5000);
+  }
+
   async disconnect(): Promise<void> {
     const hub = this.hub;
     this.hub = null;
     this.connected.set(false);
     this.activeId.set(null);
     this.messages.set([]);
+    this.otherTyping.set(false);
+    if (this.stopTypingTimer) { clearTimeout(this.stopTypingTimer); this.stopTypingTimer = null; }
+    if (this.clearTypingTimer) { clearTimeout(this.clearTypingTimer); this.clearTypingTimer = null; }
     if (hub) {
       try { await hub.stop(); } catch { /* ignore */ }
     }
@@ -106,6 +145,7 @@ export class Chat {
 
     hub.on('ReceiveMessage', (msg: ChatMessage) => this.receiveMessage(msg));
     hub.on('ConversationUpdated', (c: Conversation) => this.upsertConversation(c));
+    hub.on('Typing', (e: { conversationId: string; senderRole: string; isTyping: boolean }) => this.onTyping(e));
 
     // After a reconnect, refresh the inbox and rejoin the open thread.
     hub.onreconnected(async () => {
@@ -128,6 +168,8 @@ export class Chat {
   private receiveMessage(msg: ChatMessage): void {
     if (msg.conversationId !== this.activeId()) return;
     this.messages.update((list) => (list.some((m) => m.id === msg.id) ? list : [...list, msg]));
+    // A customer message means they've stopped typing.
+    if (msg.senderRole === 'Customer') this.otherTyping.set(false);
   }
 
   private upsertConversation(c: Conversation): void {

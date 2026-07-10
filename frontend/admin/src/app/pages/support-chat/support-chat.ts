@@ -2,12 +2,13 @@ import { Component, ElementRef, OnDestroy, OnInit, computed, effect, inject, sig
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Chat } from '../../core/chat';
+import { TypingIndicator } from '../../shared/typing-indicator';
 
 // Support-agent inbox: a live list of customer conversations on the left, the selected thread on
 // the right with a reply box. Everything updates in real time over SignalR.
 @Component({
   selector: 'app-support-chat',
-  imports: [DatePipe, FormsModule],
+  imports: [DatePipe, FormsModule, TypingIndicator],
   template: `
     <div class="page-head">
       <div>
@@ -54,9 +55,10 @@ import { Chat } from '../../core/chat';
                 </div>
               </div>
             }
+            <app-typing-indicator [active]="chat.otherTyping()" [who]="activeName()" />
           </div>
           <form class="reply" (ngSubmit)="submit()">
-            <input type="text" [(ngModel)]="draft" name="draft" placeholder="Type a reply…" autocomplete="off" [disabled]="chat.sending()" />
+            <input type="text" [(ngModel)]="draft" name="draft" placeholder="Type a reply…" autocomplete="off" [disabled]="chat.sending()" (ngModelChange)="chat.notifyTyping()" />
             <button class="btn primary" type="submit" [disabled]="chat.sending() || !draft.trim()">Send</button>
           </form>
         }
@@ -108,6 +110,7 @@ export class SupportChatPage implements OnInit, OnDestroy {
   constructor() {
     effect(() => {
       this.chat.messages();
+      this.chat.otherTyping();
       queueMicrotask(() => {
         const el = this.body()?.nativeElement;
         if (el) el.scrollTop = el.scrollHeight;

@@ -35,6 +35,8 @@ export class Chat {
   open = signal(false);
   connected = signal(false);
   sending = signal(false);
+  // True while the support agent is typing — drives the typing indicator.
+  otherTyping = signal(false);
   // Unread support replies while the panel is closed — drives the badge on the launcher icon.
   unread = signal(0);
   hasUnread = computed(() => this.unread() > 0);
@@ -42,6 +44,9 @@ export class Chat {
   private conversationId: string | null = null;
   private hub: HubConnection | null = null;
   private starting = false;
+  private lastTypingSentAt = 0;
+  private stopTypingTimer: ReturnType<typeof setTimeout> | null = null;
+  private clearTypingTimer: ReturnType<typeof setTimeout> | null = null;
 
   canChat = computed(() => this.auth.isLoggedIn());
 
@@ -89,6 +94,7 @@ export class Chat {
       .build();
 
     hub.on('ReceiveMessage', (msg: ChatMessage) => this.receive(msg));
+    hub.on('Typing', (e: { isTyping: boolean }) => this.onTyping(e.isTyping));
 
     // Re-join the conversation group after a dropped connection is restored.
     hub.onreconnected(() => hub.invoke('JoinConversation', conversationId).catch(() => {}));
@@ -111,6 +117,7 @@ export class Chat {
     if (!this.conversationId) await this.start();
     if (!this.conversationId) return;
 
+    this.stopTyping();
     this.sending.set(true);
     try {
       const saved = await this.firstValue(
@@ -123,6 +130,35 @@ export class Chat {
     }
   }
 
+  // Call on every keystroke in the input. Sends a throttled "typing" signal to the agent and
+  // schedules a "stopped typing" signal after a short idle period.
+  notifyTyping(): void {
+    if (!this.hub || !this.connected() || !this.conversationId) return;
+
+    const now = Date.now();
+    if (now - this.lastTypingSentAt > 2000) {
+      this.lastTypingSentAt = now;
+      this.hub.invoke('Typing', this.conversationId, true).catch(() => {});
+    }
+    if (this.stopTypingTimer) clearTimeout(this.stopTypingTimer);
+    this.stopTypingTimer = setTimeout(() => this.stopTyping(), 2500);
+  }
+
+  private stopTyping(): void {
+    if (this.stopTypingTimer) { clearTimeout(this.stopTypingTimer); this.stopTypingTimer = null; }
+    this.lastTypingSentAt = 0;
+    if (this.hub && this.connected() && this.conversationId) {
+      this.hub.invoke('Typing', this.conversationId, false).catch(() => {});
+    }
+  }
+
+  private onTyping(isTyping: boolean): void {
+    if (this.clearTypingTimer) { clearTimeout(this.clearTypingTimer); this.clearTypingTimer = null; }
+    this.otherTyping.set(isTyping);
+    // Safety auto-clear in case a "stopped" signal is lost.
+    if (isTyping) this.clearTypingTimer = setTimeout(() => this.otherTyping.set(false), 5000);
+  }
+
   // Called on logout to tear down the realtime connection and clear state.
   async reset(): Promise<void> {
     const hub = this.hub;
@@ -130,8 +166,11 @@ export class Chat {
     this.conversationId = null;
     this.messages.set([]);
     this.unread.set(0);
+    this.otherTyping.set(false);
     this.connected.set(false);
     this.open.set(false);
+    if (this.stopTypingTimer) { clearTimeout(this.stopTypingTimer); this.stopTypingTimer = null; }
+    if (this.clearTypingTimer) { clearTimeout(this.clearTypingTimer); this.clearTypingTimer = null; }
     if (hub) {
       try { await hub.stop(); } catch { /* ignore */ }
     }
@@ -140,6 +179,8 @@ export class Chat {
   // Adds a message unless we already have it (dedupes the sender's own echo).
   private receive(msg: ChatMessage): void {
     this.messages.update((list) => (list.some((m) => m.id === msg.id) ? list : [...list, msg]));
+    // A message arriving from support means they've stopped typing.
+    if (msg.senderRole === 'Support') this.otherTyping.set(false);
     if (!this.open() && msg.senderRole === 'Support') this.unread.update((c) => c + 1);
   }
 
