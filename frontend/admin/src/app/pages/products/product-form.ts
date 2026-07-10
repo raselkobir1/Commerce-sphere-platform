@@ -3,12 +3,13 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Api } from '../../core/api';
 import { Category, Product } from '../../core/models';
+import { ImageUpload } from '../../shared/image-upload';
 
 // Used for both "new product" and "edit product". When an :id is in the URL we load and update;
 // otherwise we create.
 @Component({
   selector: 'app-product-form',
-  imports: [FormsModule],
+  imports: [FormsModule, ImageUpload],
   template: `
     <div class="page-head"><h1>{{ id() ? 'Edit product' : 'New product' }}</h1></div>
 
@@ -60,8 +61,8 @@ import { Category, Product } from '../../core/models';
       </div>
 
       <div class="field">
-        <label>Image URL (optional)</label>
-        <input class="input" name="imageUrl" [(ngModel)]="form.imageUrl" />
+        <label>Image (optional)</label>
+        <app-image-upload [(value)]="form.imageUrl" />
       </div>
 
       @if (error()) {

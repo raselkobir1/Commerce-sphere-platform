@@ -4,10 +4,11 @@ import { Api } from '../../core/api';
 import { Perms } from '../../core/perms';
 import { Banner } from '../../core/models';
 import { Pagination } from '../../shared/pagination';
+import { ImageUpload } from '../../shared/image-upload';
 
 @Component({
   selector: 'app-banners',
-  imports: [FormsModule, Pagination],
+  imports: [FormsModule, Pagination, ImageUpload],
   template: `
     <div class="page-head">
       <div><h1>Banners</h1><div class="sub">{{ banners().length }} banners — shown in the storefront home-page carousel</div></div>
@@ -21,7 +22,7 @@ import { Pagination } from '../../shared/pagination';
           <div class="field" style="max-width:110px"><label>Order</label><input class="input" type="number" name="bo" [(ngModel)]="form.sortOrder" /></div>
         </div>
         <div class="field"><label>Subtitle</label><input class="input" name="bs" [(ngModel)]="form.subtitle" placeholder="Optional tagline shown under the title" /></div>
-        <div class="field"><label>Image URL</label><input class="input" name="bi" [(ngModel)]="form.imageUrl" placeholder="https://…" /></div>
+        <div class="field"><label>Image</label><app-image-upload [(value)]="form.imageUrl" /></div>
         <div class="field"><label>Link URL</label><input class="input" name="bl" [(ngModel)]="form.linkUrl" placeholder="Optional — where the banner links when clicked" /></div>
 
         @if (form.imageUrl) {

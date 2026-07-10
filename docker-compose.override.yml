@@ -59,6 +59,9 @@ services:
       Jwt__Issuer: "${JWT_ISSUER:-CommerceSphere}"
       Jwt__Audience: "${JWT_AUDIENCE:-CommerceSphereClients}"
       Kafka__BootstrapServers: "kafka:9092"
+      Cloudinary__CloudName: "${CLOUDINARY_CLOUD_NAME:-}"
+      Cloudinary__ApiKey: "${CLOUDINARY_API_KEY:-}"
+      Cloudinary__ApiSecret: "${CLOUDINARY_API_SECRET:-}"
 
   inventory-service:
     env_file: .env.development

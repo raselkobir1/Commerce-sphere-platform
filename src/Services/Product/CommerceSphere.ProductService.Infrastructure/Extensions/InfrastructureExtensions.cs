@@ -3,6 +3,7 @@ using CommerceSphere.ProductService.Domain.Interfaces;
 using CommerceSphere.ProductService.Infrastructure.Data;
 using CommerceSphere.ProductService.Infrastructure.Kafka.Producers;
 using CommerceSphere.ProductService.Infrastructure.Redis;
+using CommerceSphere.ProductService.Infrastructure.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -35,6 +36,10 @@ public static class InfrastructureExtensions
         // Keep catalog Stock in sync when carts check out / are cancelled.
         services.AddHostedService<Kafka.Consumers.CartCheckedOutConsumer>();
         services.AddHostedService<Kafka.Consumers.CartCancelledConsumer>();
+
+        // Image upload (Cloudinary signed REST upload — no SDK, secret stays server-side).
+        services.Configure<CloudinaryOptions>(config.GetSection("Cloudinary"));
+        services.AddHttpClient<IImageStorage, CloudinaryImageStorage>(c => c.Timeout = TimeSpan.FromSeconds(30));
 
         return services;
     }
