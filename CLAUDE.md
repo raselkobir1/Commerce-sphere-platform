@@ -25,11 +25,14 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ### Environment files
 | File | Committed | Purpose |
 |---|---|---|
-| `.env.development` | yes | dev secrets (throwaway values) |
+| `.env.development.example` | yes | template for local dev — copy to `.env.development` |
+| `.env.development` | **no** | local dev secrets (real OAuth creds etc.) — gitignored |
 | `.env.production.example` | yes | template for production |
 | `.env.production` | **no** | real prod secrets — gitignored |
 | `docker-compose.override.yml` | yes | auto-loaded dev settings |
 | `docker-compose.prod.yml` | yes | explicit prod settings |
+
+First-time setup: `cp .env.development.example .env.development` (then fill in any OAuth creds).
 
 ### Individual Services (local)
 ```bash

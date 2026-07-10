@@ -66,10 +66,18 @@ ipch/
 BenchmarkDotNet.Artifacts/
 
 # ── Secrets and environment ───────────────────────────────────────────────────
-# .env is a tracked symlink -> .env.development (Compose only auto-loads a file
-# named exactly ".env" for ${VAR} substitution in compose files; env_file: entries
-# don't cover that). Do not ignore it.
-.env.production              # real prod secrets — never commit this
+# NOTE: .gitignore does NOT support inline "# comments" after a pattern — the text
+# becomes part of the pattern and the rule silently matches nothing. Keep each
+# pattern on its own line with comments above.
+#
+# .env is a tracked symlink -> .env.development (Compose only auto-loads a file named
+# exactly ".env" for ${VAR} substitution; env_file: entries don't cover that). It is
+# intentionally NOT ignored.
+#
+# local dev secrets (real OAuth creds, etc.) — copy .env.development.example to set up
+.env.development
+# real production secrets
+.env.production
 .env.local
 appsettings.Local.json
 appsettings.local.json

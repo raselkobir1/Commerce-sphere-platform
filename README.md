@@ -170,9 +170,12 @@ In automated pipelines (GitHub Actions, GitLab CI) inject the production secrets
 
 | File | Committed | Purpose |
 |---|---|---|
-| `.env.development` | Yes | Dev secrets — safe throwaway values |
+| `.env.development.example` | Yes | Template for local dev — copy to `.env.development` |
+| `.env.development` | **No** | Local dev secrets (real OAuth creds, etc.) — gitignored |
 | `.env.production.example` | Yes | Template — shows what production needs |
 | `.env.production` | **No** | Real production secrets — gitignored |
+
+First-time setup: `cp .env.development.example .env.development`, then fill in any OAuth credentials you want to enable locally.
 
 ---
 
@@ -249,6 +252,7 @@ src/
 docker-compose.yml                   ← Base: infrastructure + services
 docker-compose.override.yml          ← Dev overlay (auto-loaded)
 docker-compose.prod.yml              ← Production overlay (explicit -f)
-.env.development                     ← Dev secrets (committed)
+.env.development.example             ← Dev template (committed; copy to .env.development)
+.env.development                     ← Local dev secrets (gitignored)
 .env.production.example              ← Production template (committed)
 ```
