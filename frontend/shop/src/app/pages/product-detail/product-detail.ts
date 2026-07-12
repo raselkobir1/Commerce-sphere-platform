@@ -9,15 +9,17 @@ import { Toast } from '../../core/toast';
 import { Product } from '../../core/models';
 import { BdtPipe } from '../../core/bdt.pipe';
 import { ratingFor, reviewsFor, stars } from '../../data/display';
+import { I18n } from '../../core/i18n';
+import { TranslatePipe } from '../../core/translate.pipe';
 
 @Component({
   selector: 'app-product-detail',
-  imports: [BdtPipe, FormsModule, RouterLink],
+  imports: [BdtPipe, FormsModule, RouterLink, TranslatePipe],
   template: `
     <div class="container">
       @if (product(); as p) {
         <nav class="crumbs">
-          <a routerLink="/">Home</a> ›
+          <a routerLink="/">{{ 'common.home' | t }}</a> ›
           <a routerLink="/">{{ p.category }}</a> ›
           <span>{{ p.name }}</span>
         </nav>
@@ -25,7 +27,7 @@ import { ratingFor, reviewsFor, stars } from '../../data/display';
         <div class="detail">
           <div class="gallery">
             <div class="main" [style.background-image]="p.imageUrl ? 'url(' + p.imageUrl + ')' : null">
-              @if (!p.imageUrl) { <span>No image</span> }
+              @if (!p.imageUrl) { <span>{{ 'product.noImage' | t }}</span> }
             </div>
           </div>
 
@@ -33,22 +35,22 @@ import { ratingFor, reviewsFor, stars } from '../../data/display';
             <span class="muted">{{ p.category }}</span>
             <h1>{{ p.name }}</h1>
             <div class="stars" style="margin-bottom:10px">{{ stars(p.id) }}
-              <span>{{ rating(p.id) }} · {{ reviews(p.id) }} reviews</span>
+              <span>{{ rating(p.id) }} · {{ i18n.t('product.reviews', { n: reviews(p.id) }) }}</span>
             </div>
             <div class="price-lg">{{ p.price | bdt }}</div>
 
             <div style="margin:12px 0">
               @if (p.stock > 0) {
-                <span class="pill in">● In stock — {{ p.stock }} available</span>
+                <span class="pill in">{{ i18n.t('product.inStockAvailable', { n: p.stock }) }}</span>
               } @else {
-                <span class="pill out">● Out of stock</span>
+                <span class="pill out">{{ 'product.outOfStockDot' | t }}</span>
               }
             </div>
 
             <p class="desc">{{ p.description }}</p>
 
-            <div class="spec"><span class="k">SKU</span><span>{{ p.sku }}</span></div>
-            <div class="spec"><span class="k">Category</span><span>{{ p.category }}</span></div>
+            <div class="spec"><span class="k">{{ 'product.sku' | t }}</span><span>{{ p.sku }}</span></div>
+            <div class="spec"><span class="k">{{ 'product.category' | t }}</span><span>{{ p.category }}</span></div>
 
             <div class="buy-row">
               <div class="qty">
@@ -56,14 +58,14 @@ import { ratingFor, reviewsFor, stars } from '../../data/display';
                 <input type="number" min="1" [max]="p.stock" [ngModel]="qty()" (ngModelChange)="setQty($event, p)" />
                 <button type="button" (click)="inc(p)">+</button>
               </div>
-              <button class="btn btn-primary" [disabled]="p.stock === 0" (click)="add(p, false)">Add to cart</button>
-              <button class="btn" [disabled]="p.stock === 0" (click)="add(p, true)">Buy now</button>
+              <button class="btn btn-primary" [disabled]="p.stock === 0" (click)="add(p, false)">{{ 'product.addToCart' | t }}</button>
+              <button class="btn" [disabled]="p.stock === 0" (click)="add(p, true)">{{ 'product.buyNow' | t }}</button>
             </div>
           </div>
         </div>
 
         @if (related().length) {
-          <h2 style="margin-top:46px">More in {{ p.category }}</h2>
+          <h2 style="margin-top:46px">{{ i18n.t('product.moreIn', { category: p.category }) }}</h2>
           <div class="grid">
             @for (r of related(); track r.id) {
               <div class="card">
@@ -78,7 +80,7 @@ import { ratingFor, reviewsFor, stars } from '../../data/display';
           </div>
         }
       } @else {
-        <p class="muted">Loading…</p>
+        <p class="muted">{{ 'common.loading' | t }}</p>
       }
     </div>
   `,
@@ -90,6 +92,7 @@ export class ProductDetailPage implements OnInit {
   private products = inject(Products);
   private toast = inject(Toast);
   private router = inject(Router);
+  i18n = inject(I18n);
 
   id = input.required<string>();
 
@@ -123,7 +126,7 @@ export class ProductDetailPage implements OnInit {
   add(p: Product, buyNow: boolean): void {
     if (!this.auth.isLoggedIn()) { this.router.navigate(['/login']); return; }
     this.cart.add(p, this.qty()).subscribe(() => {
-      this.toast.show(`${p.name} added to cart`);
+      this.toast.show(this.i18n.t('product.addedToCart', { name: p.name }));
       if (buyNow) this.router.navigate(['/cart']);
     });
   }

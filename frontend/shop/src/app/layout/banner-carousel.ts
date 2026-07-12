@@ -1,11 +1,14 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { Api } from '../core/api';
 import { Banner } from '../core/models';
+import { I18n } from '../core/i18n';
+import { TranslatePipe } from '../core/translate.pipe';
 
 // Auto-rotating hero carousel of admin-managed banners, shown at the top of the home page.
 // Renders nothing when there are no active banners.
 @Component({
   selector: 'app-banner-carousel',
+  imports: [TranslatePipe],
   template: `
     @if (slides().length) {
       <div class="carousel" (mouseenter)="pause()" (mouseleave)="resume()">
@@ -18,18 +21,18 @@ import { Banner } from '../core/models';
               <div class="slide-text">
                 <h2>{{ b.title }}</h2>
                 @if (b.subtitle) { <p>{{ b.subtitle }}</p> }
-                @if (b.linkUrl) { <span class="slide-cta">Shop now →</span> }
+                @if (b.linkUrl) { <span class="slide-cta">{{ 'banner.shopNow' | t }}</span> }
               </div>
             </div>
           </a>
         }
 
         @if (slides().length > 1) {
-          <button class="car-nav prev" (click)="prev($event)" aria-label="Previous">‹</button>
-          <button class="car-nav next" (click)="next($event)" aria-label="Next">›</button>
+          <button class="car-nav prev" (click)="prev($event)" [attr.aria-label]="'banner.prev' | t">‹</button>
+          <button class="car-nav next" (click)="next($event)" [attr.aria-label]="'banner.next' | t">›</button>
           <div class="car-dots">
             @for (b of slides(); track b.id; let i = $index) {
-              <button class="dot" [class.on]="i === index()" (click)="goTo(i, $event)" [attr.aria-label]="'Slide ' + (i + 1)"></button>
+              <button class="dot" [class.on]="i === index()" (click)="goTo(i, $event)" [attr.aria-label]="i18n.t('banner.slide', { n: i + 1 })"></button>
             }
           </div>
         }
@@ -39,6 +42,7 @@ import { Banner } from '../core/models';
 })
 export class BannerCarousel implements OnInit, OnDestroy {
   private api = inject(Api);
+  i18n = inject(I18n);
 
   slides = signal<Banner[]>([]);
   index = signal(0);

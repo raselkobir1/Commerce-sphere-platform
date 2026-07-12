@@ -37,6 +37,7 @@ img { max-width: 100%; display: block; }
 /* ───── Header ───── */
 .header { background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 50; }
 .header-inner { max-width: 1400px; margin: 0 auto; height: 66px; display: flex; align-items: center; gap: 20px; padding: 0 28px; }
+.logo-group { display: flex; align-items: center; gap: 12px; }
 .logo { font-size: 22px; font-weight: 800; letter-spacing: -.5px; white-space: nowrap; }
 .logo span { color: var(--brand); }
 .searchbar { flex: 1; display: flex; max-width: 620px; }
@@ -49,6 +50,12 @@ img { max-width: 100%; display: block; }
 .header-actions a:hover { color: var(--ink); }
 .cart-btn { position: relative; display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--ink); }
 .cart-badge { background: var(--brand); color: #fff; border-radius: 20px; font-size: 12px; font-weight: 700; padding: 1px 7px; }
+
+.lang-toggle { display: inline-flex; border: 1.5px solid var(--line); border-radius: 8px; overflow: hidden; }
+.lang-toggle button { border: 0; background: transparent; color: var(--muted); font-size: 13px; font-weight: 700; padding: 6px 10px; cursor: pointer; }
+.lang-toggle button:hover { color: var(--ink); }
+.lang-toggle button.active { background: var(--brand); color: #fff; }
+.lang-toggle button + button { border-left: 1.5px solid var(--line); }
 
 /* user avatar + dropdown */
 .user-menu { position: relative; }
@@ -66,7 +73,7 @@ img { max-width: 100%; display: block; }
 .ud-item.danger { color: var(--red); }
 
 /* ───── Home-page banner carousel ───── */
-.carousel { position: relative; height: 320px; border-radius: 16px; overflow: hidden; background: var(--panel); border: 1px solid var(--line); }
+.carousel { position: relative; height: 320px; border-radius: 16px; overflow: hidden; background: var(--panel); border: 1px solid var(--line); margin-bottom: 24px; }
 @media (max-width: 860px) { .carousel { height: 200px; } }
 .carousel .slide { position: absolute; inset: 0; display: block; background-size: cover; background-position: center; opacity: 0; transition: opacity .6s ease; pointer-events: none; }
 .carousel .slide.on { opacity: 1; pointer-events: auto; }
@@ -101,7 +108,16 @@ img { max-width: 100%; display: block; }
 
 /* ───── Catalogue layout ───── */
 .shop-layout { display: grid; grid-template-columns: 248px 1fr; gap: 26px; align-items: start; }
+.shop-layout.filters-hidden { grid-template-columns: 1fr; }
 @media (max-width: 860px) { .shop-layout { grid-template-columns: 1fr; } }
+
+.results-heading { display: flex; align-items: center; gap: 12px; }
+.filters-toggle {
+  width: 38px; height: 38px; flex: none; border-radius: 10px; border: 1.5px solid var(--line);
+  background: var(--panel); color: var(--ink); font-size: 16px; cursor: pointer;
+  display: grid; place-items: center;
+}
+.filters-toggle:hover { background: var(--bg); border-color: var(--brand); }
 
 .filters { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; position: sticky; top: 90px; }
 .filters h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 10px; }

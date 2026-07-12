@@ -5,15 +5,17 @@ import { RouterLink } from '@angular/router';
 import { Auth } from '../core/auth';
 import { Chat } from '../core/chat';
 import { TypingIndicator } from './typing-indicator';
+import { I18n } from '../core/i18n';
+import { TranslatePipe } from '../core/translate.pipe';
 
 // Floating live-support chat, pinned to the bottom-right of every page. Click the launcher to open a
 // panel and chat with a shop support agent in real time. Requires the customer to be signed in.
 @Component({
   selector: 'app-chat-widget',
-  imports: [FormsModule, RouterLink, DatePipe, TypingIndicator],
+  imports: [FormsModule, RouterLink, DatePipe, TypingIndicator, TranslatePipe],
   template: `
     <!-- Launcher -->
-    <button class="chat-fab" type="button" (click)="chat.toggle()" [attr.aria-label]="chat.open() ? 'Close chat' : 'Open chat'">
+    <button class="chat-fab" type="button" (click)="chat.toggle()" [attr.aria-label]="(chat.open() ? 'chat.closeChat' : 'chat.openChat') | t">
       @if (chat.open()) {
         <span class="chat-fab-ico">✕</span>
       } @else {
@@ -27,20 +29,20 @@ import { TypingIndicator } from './typing-indicator';
         <div class="chat-head">
           <div class="chat-head-title">
             <span class="chat-dot" [class.on]="chat.connected()"></span>
-            Shop Support
+            {{ 'chat.title' | t }}
           </div>
-          <div class="chat-head-sub">We typically reply within a few minutes</div>
+          <div class="chat-head-sub">{{ 'chat.subtitle' | t }}</div>
         </div>
 
         @if (!auth.isLoggedIn()) {
           <div class="chat-empty">
-            <p>Please sign in to chat with our support team.</p>
-            <a class="btn btn-primary btn-sm" routerLink="/login" (click)="chat.open.set(false)">Sign in</a>
+            <p>{{ 'chat.pleaseSignIn' | t }}</p>
+            <a class="btn btn-primary btn-sm" routerLink="/login" (click)="chat.open.set(false)">{{ 'common.signIn' | t }}</a>
           </div>
         } @else {
           <div class="chat-body" #body>
             @if (chat.messages().length === 0) {
-              <div class="chat-hint">👋 Hi! How can we help you today?</div>
+              <div class="chat-hint">{{ 'chat.hint' | t }}</div>
             }
             @for (m of chat.messages(); track m.id) {
               <div class="chat-msg" [class.mine]="m.senderRole === 'Customer'">
@@ -50,7 +52,7 @@ import { TypingIndicator } from './typing-indicator';
                 </div>
               </div>
             }
-            <app-typing-indicator [active]="chat.otherTyping()" who="Support" />
+            <app-typing-indicator [active]="chat.otherTyping()" [who]="'chat.support' | t" />
           </div>
 
           <form class="chat-input" (ngSubmit)="submit()">
@@ -58,12 +60,12 @@ import { TypingIndicator } from './typing-indicator';
               type="text"
               [(ngModel)]="draft"
               name="draft"
-              placeholder="Type a message…"
+              [placeholder]="'chat.placeholder' | t"
               autocomplete="off"
               [disabled]="chat.sending()"
               (ngModelChange)="chat.notifyTyping()"
             />
-            <button class="btn btn-primary btn-sm" type="submit" [disabled]="chat.sending() || !draft.trim()">Send</button>
+            <button class="btn btn-primary btn-sm" type="submit" [disabled]="chat.sending() || !draft.trim()">{{ 'chat.send' | t }}</button>
           </form>
         }
       </div>

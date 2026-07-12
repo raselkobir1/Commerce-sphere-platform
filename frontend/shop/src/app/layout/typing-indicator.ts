@@ -1,4 +1,5 @@
-import { Component, input } from '@angular/core';
+import { Component, inject, input } from '@angular/core';
+import { I18n } from '../core/i18n';
 
 // Reusable "someone is typing…" indicator: three animated dots plus an optional name.
 // Render it and toggle with the [active] input, e.g.
@@ -9,7 +10,7 @@ import { Component, input } from '@angular/core';
     @if (active()) {
       <div class="typing" role="status" aria-live="polite">
         <span class="typing-dots" aria-hidden="true"><span></span><span></span><span></span></span>
-        <span class="typing-text">{{ who() }} is typing…</span>
+        <span class="typing-text">{{ i18n.t('typing.isTyping', { who: who() }) }}</span>
       </div>
     }
   `,
@@ -46,6 +47,7 @@ import { Component, input } from '@angular/core';
   ],
 })
 export class TypingIndicator {
+  i18n = inject(I18n);
   active = input(false);
   who = input('Someone');
 }

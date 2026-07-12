@@ -2,23 +2,25 @@ import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Api } from '../../core/api';
+import { I18n } from '../../core/i18n';
+import { TranslatePipe } from '../../core/translate.pipe';
 
 @Component({
   selector: 'app-forgot-password',
-  imports: [FormsModule, RouterLink],
+  imports: [FormsModule, RouterLink, TranslatePipe],
   template: `
     <div class="container auth-wrap">
       <div class="panel">
         @if (sent()) {
-          <h1>Check your email</h1>
-          <p class="muted">If that address is registered, we've sent a link to reset your password. The link expires in 30 minutes.</p>
-          <a class="btn btn-primary btn-block" routerLink="/login">Back to sign in</a>
+          <h1>{{ 'fp.checkEmail' | t }}</h1>
+          <p class="muted">{{ 'fp.checkEmailBody' | t }}</p>
+          <a class="btn btn-primary btn-block" routerLink="/login">{{ 'fp.backToSignIn' | t }}</a>
         } @else {
-          <h1>Forgot password</h1>
-          <p class="muted">Enter your email and we'll send you a reset link.</p>
+          <h1>{{ 'fp.title' | t }}</h1>
+          <p class="muted">{{ 'fp.instructions' | t }}</p>
           <form (ngSubmit)="submit()">
             <div class="field">
-              <label>Email</label>
+              <label>{{ 'common.email' | t }}</label>
               <input class="input" type="email" name="email" [(ngModel)]="email" required />
             </div>
 
@@ -27,12 +29,12 @@ import { Api } from '../../core/api';
             }
 
             <button class="btn btn-primary btn-block" type="submit" [disabled]="loading()">
-              {{ loading() ? 'Sending…' : 'Send reset link' }}
+              {{ (loading() ? 'fp.sending' : 'fp.sendResetLink') | t }}
             </button>
           </form>
 
           <p class="muted" style="margin-top:16px">
-            <a routerLink="/login">Back to sign in</a>
+            <a routerLink="/login">{{ 'fp.backToSignIn' | t }}</a>
           </p>
         }
       </div>
@@ -41,6 +43,7 @@ import { Api } from '../../core/api';
 })
 export class ForgotPasswordPage {
   private api = inject(Api);
+  i18n = inject(I18n);
 
   email = '';
   loading = signal(false);
@@ -54,7 +57,7 @@ export class ForgotPasswordPage {
       next: () => { this.loading.set(false); this.sent.set(true); },
       error: (err) => {
         this.loading.set(false);
-        this.error.set(err?.error?.message ?? 'Something went wrong. Please try again.');
+        this.error.set(err?.error?.message ?? this.i18n.t('fp.genericError'));
       },
     });
   }

@@ -2,23 +2,25 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Auth } from '../../core/auth';
 import { Cart } from '../../core/cart';
+import { I18n } from '../../core/i18n';
+import { TranslatePipe } from '../../core/translate.pipe';
 
 // Landing page the backend redirects to after social login:
 //   success → ?access_token=…&refresh_token=…&expires_at=…
 //   failure → ?sso_error=…
 @Component({
   selector: 'app-sso-callback',
-  imports: [RouterLink],
+  imports: [RouterLink, TranslatePipe],
   template: `
     <div class="container auth-wrap">
       <div class="panel" style="text-align:center">
         @if (error()) {
-          <h1>Sign-in failed</h1>
+          <h1>{{ 'sso.signInFailedTitle' | t }}</h1>
           <p class="error">{{ error() }}</p>
-          <a class="btn btn-primary" routerLink="/login">Back to sign in</a>
+          <a class="btn btn-primary" routerLink="/login">{{ 'fp.backToSignIn' | t }}</a>
         } @else {
-          <h1>Signing you in…</h1>
-          <p class="muted">Completing social login, please wait.</p>
+          <h1>{{ 'sso.signingYouIn' | t }}</h1>
+          <p class="muted">{{ 'sso.completing' | t }}</p>
         }
       </div>
     </div>
@@ -29,6 +31,7 @@ export class SsoCallbackPage implements OnInit {
   private router = inject(Router);
   private auth = inject(Auth);
   private cart = inject(Cart);
+  private i18n = inject(I18n);
 
   error = signal('');
 
@@ -42,20 +45,20 @@ export class SsoCallbackPage implements OnInit {
       return;
     }
     if (!token) {
-      this.error.set('Sign-in was cancelled or no token was returned.');
+      this.error.set(this.i18n.t('sso.cancelledOrNoToken'));
       return;
     }
 
     this.auth.completeSsoLogin(token).subscribe({
       next: (user) => {
         if (!user) {
-          this.error.set('Could not complete sign-in. Please try again.');
+          this.error.set(this.i18n.t('sso.couldNotComplete'));
           return;
         }
         this.cart.load();
         this.router.navigate(['/'], { replaceUrl: true }); // drop tokens from the URL/history
       },
-      error: () => this.error.set('Could not complete sign-in. Please try again.'),
+      error: () => this.error.set(this.i18n.t('sso.couldNotComplete')),
     });
   }
 }

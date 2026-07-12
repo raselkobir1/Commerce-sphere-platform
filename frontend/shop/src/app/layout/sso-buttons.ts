@@ -1,5 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { Sso, SsoProvider } from '../core/sso';
+import { I18n } from '../core/i18n';
+import { TranslatePipe } from '../core/translate.pipe';
 
 // Renders a "continue with <provider>" button for every supported social provider.
 // Every provider is always shown; one whose credentials aren't configured yet is rendered
@@ -7,21 +9,22 @@ import { Sso, SsoProvider } from '../core/sso';
 // Drop <app-sso-buttons /> on the login / register pages.
 @Component({
   selector: 'app-sso-buttons',
+  imports: [TranslatePipe],
   template: `
     @if (providers().length) {
-      <div class="sso-divider"><span>or continue with</span></div>
+      <div class="sso-divider"><span>{{ 'sso.orContinueWith' | t }}</span></div>
       <div class="sso-grid">
         @for (p of providers(); track p.name) {
           <button
             type="button"
             class="btn sso-btn"
             [disabled]="!p.enabled"
-            [title]="p.enabled ? 'Continue with ' + label(p.name) : label(p.name) + ' login is not configured yet'"
+            [title]="p.enabled ? i18n.t('sso.continueWith', { provider: label(p.name) }) : i18n.t('sso.notConfiguredYet', { provider: label(p.name) })"
             (click)="p.enabled && sso.start(p.name)"
           >
             <span class="sso-ico">{{ icon(p.name) }}</span> {{ label(p.name) }}
             @if (!p.enabled) {
-              <span class="sso-soon">soon</span>
+              <span class="sso-soon">{{ 'sso.soon' | t }}</span>
             }
           </button>
         }
@@ -46,6 +49,7 @@ import { Sso, SsoProvider } from '../core/sso';
 })
 export class SsoButtons implements OnInit {
   sso = inject(Sso);
+  i18n = inject(I18n);
   providers = signal<SsoProvider[]>([]);
 
   ngOnInit(): void {

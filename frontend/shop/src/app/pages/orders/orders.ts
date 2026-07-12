@@ -4,24 +4,26 @@ import { RouterLink } from '@angular/router';
 import { Api } from '../../core/api';
 import { BdtPipe } from '../../core/bdt.pipe';
 import { Order } from '../../core/models';
+import { I18n } from '../../core/i18n';
+import { TranslatePipe } from '../../core/translate.pipe';
 
 @Component({
   selector: 'app-orders',
-  imports: [DatePipe, RouterLink, BdtPipe],
+  imports: [DatePipe, RouterLink, BdtPipe, TranslatePipe],
   template: `
     <div class="container" style="max-width:760px">
-      <h1>My orders</h1>
+      <h1>{{ 'orders.title' | t }}</h1>
 
       @if (loading()) {
-        <p class="muted">Loading…</p>
+        <p class="muted">{{ 'common.loading' | t }}</p>
       } @else if (orders().length === 0) {
-        <div class="empty">You haven't placed any orders yet.<br /><a class="btn btn-primary" routerLink="/" style="margin-top:14px">Start shopping</a></div>
+        <div class="empty">{{ 'orders.noOrders' | t }}<br /><a class="btn btn-primary" routerLink="/" style="margin-top:14px">{{ 'common.startShopping' | t }}</a></div>
       } @else {
         @for (o of orders(); track o.id) {
           <div class="panel" style="margin-bottom:16px">
             <div style="display:flex; justify-content:space-between; align-items:center; gap:12px">
               <div>
-                <strong>Order #{{ o.id.slice(0, 8).toUpperCase() }}</strong>
+                <strong>{{ i18n.t('orders.orderNumber', { id: o.id.slice(0, 8).toUpperCase() }) }}</strong>
                 <div class="muted" style="font-size:13px">{{ (o.updatedAt || o.createdAt) | date: 'medium' }}</div>
               </div>
               <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
@@ -31,11 +33,11 @@ import { Order } from '../../core/models';
                   {{ statusLabel(o.status) }}
                 </span>
                 <button class="btn btn-sm" (click)="track(o.id)">
-                  {{ trackingId() === o.id ? 'Hide tracking' : 'Track order' }}
+                  {{ (trackingId() === o.id ? 'orders.hideTracking' : 'orders.trackOrder') | t }}
                 </button>
                 @if (o.status === 'CheckedOut') {
                   <button class="btn btn-sm" [disabled]="cancelling() === o.id" (click)="cancel(o)">
-                    {{ cancelling() === o.id ? 'Cancelling…' : 'Cancel order' }}
+                    {{ (cancelling() === o.id ? 'orders.cancelling' : 'orders.cancelOrder') | t }}
                   </button>
                 }
               </div>
@@ -50,7 +52,7 @@ import { Order } from '../../core/models';
                       <div class="track-status">{{ step.label }}</div>
                       @if (step.note) { <div class="track-note">{{ step.note }}</div> }
                       @if (step.time) { <div class="track-time">{{ step.time | date: 'medium' }}</div> }
-                      @else if (!step.done) { <div class="track-time">Pending</div> }
+                      @else if (!step.done) { <div class="track-time">{{ 'orders.pending' | t }}</div> }
                     </div>
                   </div>
                 }
@@ -62,7 +64,7 @@ import { Order } from '../../core/models';
                 <div class="l"><span>{{ item.productName }} <span class="muted">× {{ item.quantity }}</span></span><span>{{ item.lineTotal | bdt }}</span></div>
               }
               <div class="l" style="font-weight:800; border-top:1px solid var(--line); margin-top:6px; padding-top:10px">
-                <span>Total</span><span>{{ o.totalAmount | bdt }}</span>
+                <span>{{ 'common.total' | t }}</span><span>{{ o.totalAmount | bdt }}</span>
               </div>
             </div>
           </div>
@@ -73,6 +75,7 @@ import { Order } from '../../core/models';
 })
 export class OrdersPage implements OnInit {
   private api = inject(Api);
+  i18n = inject(I18n);
 
   orders = signal<Order[]>([]);
   loading = signal(false);
@@ -83,7 +86,15 @@ export class OrdersPage implements OnInit {
 
   track(id: string): void { this.trackingId.set(this.trackingId() === id ? null : id); }
 
-  statusLabel(s: string): string { return s === 'CheckedOut' ? 'Placed' : s; }
+  statusLabel(s: string): string {
+    const key: Record<string, string> = {
+      CheckedOut: 'orders.statusPlaced',
+      Confirmed: 'orders.statusConfirmed',
+      Shipped: 'orders.statusShipped',
+      Cancelled: 'orders.statusCancelled',
+    };
+    return key[s] ? this.i18n.t(key[s]) : s;
+  }
 
   // The normal order journey. The tracker always shows every step so the customer sees the full
   // path — completed steps (with their real timestamp where recorded) and the remaining ones as
@@ -117,11 +128,11 @@ export class OrdersPage implements OnInit {
   }
 
   cancel(o: Order): void {
-    if (!confirm(`Cancel order #${o.id.slice(0, 8).toUpperCase()}? Any reserved stock is released and the store team is notified.`)) return;
+    if (!confirm(this.i18n.t('orders.cancelConfirm', { id: o.id.slice(0, 8).toUpperCase() }))) return;
     this.cancelling.set(o.id);
     this.api.post(`/api/carts/my-orders/${o.id}/cancel`, { reason: 'Cancelled by customer' }).subscribe({
       next: () => { this.cancelling.set(null); this.load(); },
-      error: (e) => { this.cancelling.set(null); alert(e?.error?.message ?? 'Could not cancel the order.'); },
+      error: (e) => { this.cancelling.set(null); alert(e?.error?.message ?? this.i18n.t('orders.couldNotCancel')); },
     });
   }
 }

@@ -5,18 +5,20 @@ import { Cart } from '../../core/cart';
 import { Products } from '../../core/products';
 import { CartItem } from '../../core/models';
 import { BdtPipe } from '../../core/bdt.pipe';
+import { I18n } from '../../core/i18n';
+import { TranslatePipe } from '../../core/translate.pipe';
 
 @Component({
   selector: 'app-cart',
-  imports: [BdtPipe, RouterLink],
+  imports: [BdtPipe, RouterLink, TranslatePipe],
   template: `
     <div class="container">
-      <h1>Your cart</h1>
+      <h1>{{ 'cart.title' | t }}</h1>
 
       @if (!auth.isLoggedIn()) {
-        <div class="empty">Please <a class="btn-ghost" routerLink="/login">sign in</a> to view your cart.</div>
+        <div class="empty">{{ 'cart.pleaseSignInPrefix' | t }} <a class="btn-ghost" routerLink="/login">{{ 'common.signIn' | t }}</a> {{ 'cart.pleaseSignInToView' | t }}</div>
       } @else if (!cart.cart() || cart.cart()!.items.length === 0) {
-        <div class="empty">Your cart is empty.<br /><a class="btn btn-primary" routerLink="/" style="margin-top:14px">Start shopping</a></div>
+        <div class="empty">{{ 'cart.empty' | t }}<br /><a class="btn btn-primary" routerLink="/" style="margin-top:14px">{{ 'common.startShopping' | t }}</a></div>
       } @else {
         <div class="cart-grid">
           <div class="panel" style="margin:0">
@@ -25,7 +27,7 @@ import { BdtPipe } from '../../core/bdt.pipe';
                 <div class="pic" [style.background-image]="image(item.productId)"></div>
                 <div class="info">
                   <div class="nm">{{ item.productName }}</div>
-                  <div class="muted">{{ item.unitPrice | bdt }} each</div>
+                  <div class="muted">{{ item.unitPrice | bdt }} {{ 'cart.each' | t }}</div>
                 </div>
                 <div class="qty">
                   <button type="button" (click)="dec(item)">−</button>
@@ -33,18 +35,18 @@ import { BdtPipe } from '../../core/bdt.pipe';
                   <button type="button" (click)="inc(item)">+</button>
                 </div>
                 <div class="ln">{{ item.lineTotal | bdt }}</div>
-                <button class="btn btn-sm" (click)="remove(item)">Remove</button>
+                <button class="btn btn-sm" (click)="remove(item)">{{ 'cart.remove' | t }}</button>
               </div>
             }
           </div>
 
           <div class="summary">
-            <h2>Order summary</h2>
-            <div class="line"><span>Subtotal ({{ cart.count() }} items)</span><span>{{ cart.cart()!.totalAmount | bdt }}</span></div>
-            <div class="line"><span>Shipping</span><span style="color:var(--green)">Free</span></div>
-            <div class="line total"><span>Total</span><span>{{ cart.cart()!.totalAmount | bdt }}</span></div>
-            <a class="btn btn-primary btn-block" routerLink="/checkout" style="margin-top:14px">Proceed to checkout</a>
-            <a class="btn btn-block btn-ghost" routerLink="/" style="margin-top:10px">Continue shopping</a>
+            <h2>{{ 'cart.orderSummary' | t }}</h2>
+            <div class="line"><span>{{ i18n.t('cart.subtotal', { n: cart.count() }) }}</span><span>{{ cart.cart()!.totalAmount | bdt }}</span></div>
+            <div class="line"><span>{{ 'common.shipping' | t }}</span><span style="color:var(--green)">{{ 'common.free' | t }}</span></div>
+            <div class="line total"><span>{{ 'common.total' | t }}</span><span>{{ cart.cart()!.totalAmount | bdt }}</span></div>
+            <a class="btn btn-primary btn-block" routerLink="/checkout" style="margin-top:14px">{{ 'cart.proceedToCheckout' | t }}</a>
+            <a class="btn btn-block btn-ghost" routerLink="/" style="margin-top:10px">{{ 'cart.continueShopping' | t }}</a>
           </div>
         </div>
       }
@@ -54,6 +56,7 @@ import { BdtPipe } from '../../core/bdt.pipe';
 export class CartPage implements OnInit {
   auth = inject(Auth);
   cart = inject(Cart);
+  i18n = inject(I18n);
   private products = inject(Products);
 
   ngOnInit(): void {

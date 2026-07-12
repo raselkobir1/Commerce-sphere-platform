@@ -14,68 +14,75 @@ import { Toast } from '../../core/toast';
 import { Category, Product } from '../../core/models';
 import { BannerCarousel } from '../../layout/banner-carousel';
 import { ProductCard } from '../../layout/product-card';
+import { I18n } from '../../core/i18n';
+import { TranslatePipe } from '../../core/translate.pipe';
+import { CatalogUi } from '../../core/catalog-ui';
 
 @Component({
   selector: 'app-catalog',
-  imports: [FormsModule, BannerCarousel, ProductCard],
+  imports: [FormsModule, BannerCarousel, ProductCard, TranslatePipe],
   template: `
-    <div class="container" style="padding-top:18px">
-      <app-banner-carousel />
-    </div>
-
-    <div class="container shop-layout">
+    <div class="container shop-layout" [class.filters-hidden]="!filtersOpen()" style="padding-top:18px">
       <!-- ───── Left dynamic category sidebar ───── -->
-      <aside class="filters">
-        <div class="group">
-          <h3>Categories</h3>
-          <button class="cat-parent" [class.active]="!selected()" (click)="select(null)">
-            <span>🛍️</span> All products
-          </button>
-
-          @for (node of tree(); track node.cat.id) {
-            <button class="cat-parent" [class.active]="selected() === node.cat.name" (click)="select(node.cat.name)">
-              <span>📂</span> {{ node.cat.name }}
+      @if (filtersOpen()) {
+        <aside class="filters">
+          <div class="group">
+            <h3>{{ 'catalog.categories' | t }}</h3>
+            <button class="cat-parent" [class.active]="!selected()" (click)="select(null)">
+              <span>🛍️</span> {{ 'catalog.allProducts' | t }}
             </button>
-            @for (child of node.children; track child.cat.id) {
-              <button class="cat-sub" [class.active]="selected() === child.cat.name" (click)="select(child.cat.name)">
-                {{ child.cat.name }}
+
+            @for (node of tree(); track node.cat.id) {
+              <button class="cat-parent" [class.active]="selected() === node.cat.name" (click)="select(node.cat.name)">
+                <span>📂</span> {{ node.cat.name }}
               </button>
+              @for (child of node.children; track child.cat.id) {
+                <button class="cat-sub" [class.active]="selected() === child.cat.name" (click)="select(child.cat.name)">
+                  {{ child.cat.name }}
+                </button>
+              }
             }
-          }
-        </div>
-
-        <div class="group">
-          <h3>Max price</h3>
-          <div class="price-row">
-            <input class="input" type="number" min="0" placeholder="Any" [ngModel]="maxPrice()"
-                   (ngModelChange)="maxPrice.set($event ? +$event : null)" />
-            <span class="muted">৳</span>
           </div>
-        </div>
 
-        <div class="group">
-          <label class="check">
-            <input type="checkbox" [ngModel]="inStockOnly()" (ngModelChange)="inStockOnly.set($event)" />
-            In stock only
-          </label>
-        </div>
+          <div class="group">
+            <h3>{{ 'catalog.maxPrice' | t }}</h3>
+            <div class="price-row">
+              <input class="input" type="number" min="0" [placeholder]="'catalog.any' | t" [ngModel]="maxPrice()"
+                     (ngModelChange)="maxPrice.set($event ? +$event : null)" />
+              <span class="muted">৳</span>
+            </div>
+          </div>
 
-        <button class="btn btn-block btn-sm" (click)="reset()">Clear all filters</button>
-      </aside>
+          <div class="group">
+            <label class="check">
+              <input type="checkbox" [ngModel]="inStockOnly()" (ngModelChange)="inStockOnly.set($event)" />
+              {{ 'catalog.inStockOnly' | t }}
+            </label>
+          </div>
+
+          <div class="group">
+            <h3>{{ 'catalog.sort' | t }}</h3>
+            <select class="input" [ngModel]="sort()" (ngModelChange)="sort.set($event)">
+              <option value="featured">{{ 'catalog.sortFeatured' | t }}</option>
+              <option value="price-asc">{{ 'catalog.sortPriceAsc' | t }}</option>
+              <option value="price-desc">{{ 'catalog.sortPriceDesc' | t }}</option>
+              <option value="name">{{ 'catalog.sortName' | t }}</option>
+            </select>
+          </div>
+
+          <button class="btn btn-block btn-sm" (click)="reset()">{{ 'catalog.clearAllFilters' | t }}</button>
+        </aside>
+      }
 
       <!-- ───── Results: one flat, infinitely-scrolling grid ───── -->
       <main>
+        <app-banner-carousel />
+
         <div class="results-bar">
           <div>
             <h1 style="font-size:22px;margin:0">{{ heading() }}</h1>
-            <span class="muted">{{ feed.total() }} product(s)</span>
+            <span class="muted">{{ i18n.t('catalog.productsCount', { n: feed.total() }) }}</span>
           </div>
-          <select class="input" [ngModel]="sort()" (ngModelChange)="sort.set($event)">
-            <option value="featured">Sort: Featured</option>
-            <option value="price-asc">Price: Low to High</option>
-            <option value="price-desc">Price: High to Low</option>
-            <option value="name">Name: A–Z</option>
-          </select>
         </div>
 
         @if (activeChips().length) {
@@ -93,16 +100,16 @@ import { ProductCard } from '../../layout/product-card';
             }
           </div>
         } @else if (!feed.loading()) {
-          <div class="empty">No products match your filters.<br /><button class="btn-ghost" (click)="reset()">Clear filters</button></div>
+          <div class="empty">{{ 'catalog.noMatch' | t }}<br /><button class="btn-ghost" (click)="reset()">{{ 'catalog.clearFilters' | t }}</button></div>
         }
 
         <!-- Sentinel is always rendered so the IntersectionObserver can attach once. -->
         <div #sentinel class="feed-sentinel" aria-hidden="true"></div>
 
         @if (feed.loading()) {
-          <p class="muted feed-status">Loading more…</p>
+          <p class="muted feed-status">{{ 'catalog.loadingMore' | t }}</p>
         } @else if (feed.items().length && !feed.hasMore()) {
-          <p class="muted feed-status">You've reached the end · {{ feed.total() }} products</p>
+          <p class="muted feed-status">{{ i18n.t('catalog.reachedEnd', { n: feed.total() }) }}</p>
         }
       </main>
     </div>
@@ -117,6 +124,7 @@ import { ProductCard } from '../../layout/product-card';
 export class CatalogPage implements OnInit, AfterViewInit, OnDestroy {
   feed = inject(Feed);
   products = inject(Products); // cached sample — powers the sidebar category tree only
+  i18n = inject(I18n);
   private api = inject(Api);
   private auth = inject(Auth);
   private cart = inject(Cart);
@@ -125,6 +133,7 @@ export class CatalogPage implements OnInit, AfterViewInit, OnDestroy {
   private router = inject(Router);
 
   private cats = signal<Category[]>([]);
+  filtersOpen = inject(CatalogUi).filtersOpen;
   selected = signal<string | null>(null);
   maxPrice = signal<number | null>(null);
   inStockOnly = signal(false);
@@ -148,14 +157,16 @@ export class CatalogPage implements OnInit, AfterViewInit, OnDestroy {
   });
 
   heading = computed(() =>
-    this.selected() ?? (this.search.term() ? `Results for “${this.search.term()}”` : 'All products'));
+    this.selected() ?? (this.search.term()
+      ? this.i18n.t('catalog.resultsFor', { term: this.search.term() })
+      : this.i18n.t('catalog.allProducts')));
 
   activeChips = computed(() => {
     const chips: { key: string; label: string; clear: () => void }[] = [];
     if (this.search.term()) chips.push({ key: 'q', label: `“${this.search.term()}”`, clear: () => this.search.term.set('') });
     if (this.selected()) chips.push({ key: 'c', label: this.selected()!, clear: () => this.selected.set(null) });
     if (this.maxPrice() != null) chips.push({ key: 'm', label: `≤ ৳${this.maxPrice()}`, clear: () => this.maxPrice.set(null) });
-    if (this.inStockOnly()) chips.push({ key: 's', label: 'In stock', clear: () => this.inStockOnly.set(false) });
+    if (this.inStockOnly()) chips.push({ key: 's', label: this.i18n.t('catalog.inStockChip'), clear: () => this.inStockOnly.set(false) });
     return chips;
   });
 
@@ -240,6 +251,6 @@ export class CatalogPage implements OnInit, AfterViewInit, OnDestroy {
 
   add(p: Product): void {
     if (!this.auth.isLoggedIn()) { this.router.navigate(['/login']); return; }
-    this.cart.add(p).subscribe(() => this.toast.show(`${p.name} added to cart`));
+    this.cart.add(p).subscribe(() => this.toast.show(this.i18n.t('product.addedToCart', { name: p.name })));
   }
 }
