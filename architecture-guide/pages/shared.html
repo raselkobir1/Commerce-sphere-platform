@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shared Libraries — CommerceSphere Architecture Guide</title>
+<link rel="stylesheet" href="../assets/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>:root{--accent:var(--shared);}</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="../index.html"><span class="logo">🧭</span> CommerceSphere Guide</a>
+    <nav class="topnav">
+      <a href="../index.html">Overview</a>
+      <a href="gateway.html">Gateway</a>
+      <a href="auth.html">Auth</a>
+      <a href="product.html">Product</a>
+      <a href="inventory.html">Inventory</a>
+      <a href="cart.html">Cart</a>
+      <a href="notification.html">Notification</a>
+      <a href="chat.html">Chat</a>
+      <a href="shared.html">Shared Libs</a>
+      <a href="docker.html">Dockerize</a>
+    </nav>
+    <div class="spacer"></div>
+    <button class="theme-toggle" id="theme-toggle">🌙 Dark</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="page-head">
+    <a class="back-link" href="../index.html">← Back to overview</a>
+    <div class="kicker"><span class="dot"></span> Foundations · Reused across every service</div>
+    <h1>🧩 Shared Libraries</h1>
+    <p class="dek">Two projects every service depends on: <code>Shared.Common</code> (response envelope, exceptions, middleware, resilience, the idempotency contract, the Redis distributed lock) and <code>Shared.Contracts</code> (every Kafka event schema — the single source of truth so producer and consumer never drift on a payload shape).</p>
+    <div class="meta-row">
+      <span class="badge" style="--accent:var(--shared)">src/Shared/CommerceSphere.Shared.Common</span>
+      <span class="badge" style="--accent:var(--shared)">src/Shared/CommerceSphere.Shared.Contracts</span>
+    </div>
+  </div>
+
+  <div class="toc">
+    <a href="#apiresponse">ApiResponse&lt;T&gt;</a>
+    <a href="#exceptions">Exception → HTTP map</a>
+    <a href="#idempotency">Idempotency pattern</a>
+    <a href="#lock">Distributed lock</a>
+    <a href="#polly">Polly resilience</a>
+    <a href="#contracts">Kafka event contracts</a>
+  </div>
+
+  <section class="block" id="apiresponse">
+    <h2><span class="num">1</span> ApiResponse&lt;T&gt; — one envelope, every service</h2>
+    <div class="code-block">
+      <div class="file">📄 Common/Models/ApiResponse.cs</div>
+      <pre><code class="language-csharp">public class ApiResponse&lt;T&gt;
+{
+    public bool Success { get; init; }
+    public string Message { get; init; } = string.Empty;
+    public T? Data { get; init; }
+    public IEnumerable&lt;string&gt; Errors { get; init; } = [];
+    public string TraceId { get; init; } = string.Empty;
+    public string CorrelationId { get; init; } = string.Empty;
+
+    public static ApiResponse&lt;T&gt; Ok(T data, string message = "") => new() { Success = true, Data = data, Message = message };
+    public static ApiResponse&lt;T&gt; Fail(string message, IEnumerable&lt;string&gt;? errors = null) => new() { Success = false, Message = message, Errors = errors ?? [] };
+}
+// Non-generic ApiResponse : ApiResponse&lt;object&gt; for payload-less responses (logout, revoke-token).</code></pre>
+    </div>
+    <p>Every controller across all five services returns this shape — a client can always check <code>response.success</code>, read <code>response.data</code>, and correlate a failure back to logs via <code>traceId</code>/<code>correlationId</code> without service-specific parsing.</p>
+  </section>
+
+  <section class="block" id="exceptions">
+    <h2><span class="num">2</span> Exception types → HTTP status, centrally mapped</h2>
+    <p class="section-intro">Managers throw semantic exceptions; a single middleware in every service maps them to the right status code and wraps them in <code>ApiResponse.Fail(...)</code> — controllers never write try/catch for this.</p>
+    <table>
+      <tr><th>Exception</th><th>HTTP status</th><th>Typical trigger</th></tr>
+      <tr><td><code>ValidationException</code></td><td>400</td><td>FluentValidation failure</td></tr>
+      <tr><td><code>UnauthorizedException</code></td><td>401</td><td>Bad credentials, expired session</td></tr>
+      <tr><td><code>NotFoundException</code></td><td>404</td><td>Entity lookup miss</td></tr>
+      <tr><td><code>ConflictException</code></td><td>409</td><td>Duplicate SKU, duplicate email</td></tr>
+      <tr><td><code>ConcurrencyException</code></td><td>409</td><td>EF optimistic-concurrency (<code>RowVersion</code>) clash</td></tr>
+      <tr><td><code>IdempotencyException</code></td><td>409</td><td>Replayed idempotency key</td></tr>
+      <tr><td><code>BusinessException</code></td><td>422</td><td>Domain invariant violation (insufficient stock, etc.)</td></tr>
+      <tr><td>(anything else)</td><td>500</td><td>Message hidden from the client, full detail logged</td></tr>
+    </table>
+    <div class="code-block">
+      <div class="file">📄 Common/Middleware/GlobalExceptionMiddleware.cs</div>
+      <pre><code class="language-csharp">var (statusCode, message, errors) = exception switch
+{
+    ValidationException vex   => (HttpStatusCode.BadRequest, "Validation failed", vex.Errors),
+    NotFoundException nex     => (HttpStatusCode.NotFound, nex.Message, []),
+    BusinessException bex     => (HttpStatusCode.UnprocessableEntity, bex.Message, []),
+    ConflictException cex     => (HttpStatusCode.Conflict, cex.Message, []),
+    IdempotencyException iex  => (HttpStatusCode.Conflict, iex.Message, []),
+    _                         => (HttpStatusCode.InternalServerError, "An unexpected error occurred.", [])
+};</code></pre>
+    </div>
+    <p>Registered via <code>app.UseGlobalExceptionHandler()</code>, right after <code>UseCorrelationId()</code> so the correlation ID is already on <code>HttpContext.Items</code> when an error response is built.</p>
+  </section>
+
+  <section class="block" id="idempotency">
+    <h2><span class="num">3</span> The Redis idempotency pattern — one implementation, atomic check-and-claim</h2>
+    <p class="section-intro">Used to ship as three near-identical Redis-backed classes, one hand-rolled per service (Auth, Inventory, Cart), each doing a separate <code>IsProcessedAsync</code> read followed by a separate <code>MarkProcessedAsync</code> write — a check-then-mark gap that two concurrent callers with the same key could both slip through. Now there's a single <code>RedisIdempotencyService</code> in <code>Shared.Common</code>, parameterized by key prefix so services still don't collide with each other on the shared Redis instance, with the race closed by an atomic claim.</p>
+    <div class="code-block">
+      <div class="file">📄 Common/Idempotency/RedisIdempotencyService.cs</div>
+      <pre><code class="language-csharp">public class RedisIdempotencyService(IConnectionMultiplexer redis, string keyPrefix) : IIdempotencyService
+{
+    public async Task&lt;bool&gt; IsProcessedAsync(string key, CancellationToken ct = default) =>
+        await _db.KeyExistsAsync(BuildKey(key));
+
+    public async Task MarkProcessedAsync(string key, TimeSpan? expiry = null, CancellationToken ct = default) =>
+        await _db.StringSetAsync(BuildKey(key), "1", expiry ?? DefaultExpiry);
+
+    // The fix: SETNX in one round trip — either this call is the one that claims the key, or it isn't.
+    // No window between "check" and "mark" for a second caller to land in.
+    public async Task&lt;bool&gt; TryMarkProcessedAsync(string key, TimeSpan? expiry = null, CancellationToken ct = default) =>
+        await _db.StringSetAsync(BuildKey(key), "1", expiry ?? DefaultExpiry, When.NotExists);
+}</code></pre>
+    </div>
+    <p>Each service registers it with its own prefix via a factory, e.g. <code>new RedisIdempotencyService(redis, "idempotency:inv:")</code> — same class, three isolated key spaces. <code>TryMarkProcessedAsync</code> is the one callers should reach for; the older two-step methods still exist for call sites that genuinely want a "claim now with a short TTL, extend to a long TTL only after the work actually succeeds" pattern (see Inventory's <code>ReserveAsync</code>).</p>
+    <table>
+      <tr><th>Service</th><th>Key prefix</th><th>Where it's actually called</th></tr>
+      <tr><td>Auth</td><td><code>idempotency:*</code></td><td>Registered; no call site currently reaches it (Auth's own Kafka consumer instead does a raw Redis SETNX guard directly)</td></tr>
+      <tr><td>Inventory</td><td><code>idempotency:inv:*</code></td><td>✅ <code>InventoryManager.ReserveAsync</code> — atomic claim, short TTL, extended on success</td></tr>
+      <tr><td>Cart</td><td><code>idempotency:cart:*</code></td><td>✅ <code>CartManager.CheckoutAsync</code> (checkout-race guard) and <code>InventorySagaConsumer</code> (per-event dedup) — see the <a class="inline-link" href="cart.html#idempotency">Cart page</a></td></tr>
+    </table>
+    <div class="callout ok"><div class="callout-title">✅ Fixed</div>Cart's <code>IIdempotencyService</code> used to be injected and never called at all — <code>CheckoutAsync</code> now claims <code>checkout:{'{'}CartId{'}'}</code> before proceeding, and <code>InventorySagaConsumer</code> (previously the one Kafka consumer in the platform with zero dedup guard) now claims <code>saga:reserved:{'{'}CartId{'}'}</code> / <code>saga:reservation-failed:{'{'}CartId{'}'}</code> before acting on a redelivered event.</div>
+  </section>
+
+  <section class="block" id="lock">
+    <h2><span class="num">4</span> Distributed lock — Redis SETNX, safe release, sorted multi-key acquisition</h2>
+    <p class="section-intro">Idempotency keys answer "has this exact request already been handled?" — a completely different question from "is someone else touching this row right now?" Nothing in the platform answered the second question until <code>IDistributedLockService</code> was added: every Redis usage before this was a one-shot dedup guard, never a lock protecting a read-modify-write against a genuinely concurrent second reader.</p>
+    <div class="code-block">
+      <div class="file">📄 Common/Locking/IDistributedLockService.cs</div>
+      <pre><code class="language-csharp">public interface IDistributedLockService
+{
+    // Retries until `wait` elapses. Returns a handle that releases the lock on DisposeAsync,
+    // or null if it couldn't be acquired in time. Auto-expires after `expiry` even if never
+    // released, so a crashed holder can never wedge the resource forever.
+    Task&lt;IAsyncDisposable?&gt; AcquireAsync(string resource, TimeSpan expiry, TimeSpan wait, CancellationToken ct = default);
+}</code></pre>
+    </div>
+    <div class="code-block">
+      <div class="file">📄 Common/Locking/RedisDistributedLockService.cs</div>
+      <pre><code class="language-csharp">private const string ReleaseScript = """
+    if redis.call('get', KEYS[1]) == ARGV[1] then
+        return redis.call('del', KEYS[1])
+    else
+        return 0
+    end
+    """;   // only delete if we still hold OUR token — an expired-then-reacquired lock is never stolen back
+
+public async Task&lt;IAsyncDisposable?&gt; AcquireAsync(string resource, TimeSpan expiry, TimeSpan wait, CancellationToken ct = default)
+{
+    var key = $"lock:{resource}";
+    var token = Guid.NewGuid().ToString("N");   // unique per acquisition — this is what the release script checks
+    var deadline = DateTime.UtcNow + wait;
+
+    while (true)
+    {
+        if (await db.StringSetAsync(key, token, expiry, When.NotExists))
+            return new LockHandle(db, key, token);
+        if (DateTime.UtcNow &gt;= deadline) return null;
+        await Task.Delay(RetryInterval, ct);
+    }
+}</code></pre>
+    </div>
+    <p>A plain <code>SETNX</code>-with-TTL lock is only safe against one holder at a time <i>if</i> release can't accidentally delete somebody else's lock — the classic bug is holder A's lease expiring, holder B acquiring the same key, then A's delayed <code>Dispose()</code> deleting B's lock. The Lua script closes that: it only deletes when the stored value still matches A's own token.</p>
+    <div class="code-block">
+      <div class="file">📄 Common/Locking/DistributedLockExtensions.cs</div>
+      <pre><code class="language-csharp">public static async Task&lt;IAsyncDisposable?&gt; AcquireAllAsync(
+    this IDistributedLockService locks, IEnumerable&lt;string&gt; resources, TimeSpan expiry, TimeSpan wait, CancellationToken ct = default)
+{
+    var ordered = resources.Distinct().OrderBy(r =&gt; r, StringComparer.Ordinal).ToList();   // stable order -> no deadlocks
+    var acquired = new List&lt;IAsyncDisposable&gt;(ordered.Count);
+
+    foreach (var resource in ordered)
+    {
+        var handle = await locks.AcquireAsync(resource, expiry, wait, ct);
+        if (handle is null) { foreach (var held in acquired) await held.DisposeAsync(); return null; }   // all-or-nothing
+        acquired.Add(handle);
+    }
+    return new CompositeLockHandle(acquired);
+}</code></pre>
+    </div>
+    <p>When a single operation needs to lock several resources at once (e.g. reserving stock across every SKU in a multi-item cart), acquiring them in an arbitrary order is how two concurrent multi-lock operations deadlock each other. Sorting the resource keys first means every caller acquires the same set in the same order, so a cycle can never form.</p>
+    <div class="callout ok"><div class="callout-title">✅ Where it's actually used</div>Inventory is the only service wired up to it today — see the <a class="inline-link" href="inventory.html#lock">Inventory page</a> for how it wraps <code>ReserveAsync</code>/<code>ReleaseAsync</code>/<code>AdjustStockAsync</code>/<code>ReceiveStockAsync</code> and both stock-mutating Kafka consumers. Verified live: 20 truly-concurrent <code>+1</code> stock-receive calls on one SKU landed on exactly the right final count with zero lost updates and zero 500s; two concurrent over-stock reservations correctly serialized into one success + one clean <code>422 Insufficient stock</code> instead of a race.</div>
+  </section>
+
+  <section class="block" id="polly">
+    <h2><span class="num">5</span> Polly resilience policies — retry only, no circuit breaker</h2>
+    <div class="code-block">
+      <div class="file">📄 Common/Resilience/ResiliencePolicies.cs</div>
+      <pre><code class="language-csharp">public static AsyncRetryPolicy DatabaseRetryPolicy(ILogger logger) =>
+    Policy.Handle&lt;Exception&gt;(IsTransient)
+        .WaitAndRetryAsync(3, attempt => TimeSpan.FromSeconds(Math.Pow(2, attempt)));   // 2s, 4s, 8s
+
+public static AsyncRetryPolicy KafkaRetryPolicy(ILogger logger) =>
+    Policy.Handle&lt;Exception&gt;()
+        .WaitAndRetryAsync(5, attempt => TimeSpan.FromSeconds(Math.Pow(2, attempt)));
+
+public static AsyncRetryPolicy HttpRetryPolicy(ILogger logger) =>
+    Policy.Handle&lt;HttpRequestException&gt;()
+        .WaitAndRetryAsync(3, attempt => TimeSpan.FromMilliseconds(200 * attempt));</code></pre>
+    </div>
+    <p>Every Kafka producer across the platform (Auth's <code>UserEventProducer</code>, Product's <code>ProductEventProducer</code>, Inventory's <code>InventoryEventProducer</code>, Cart's <code>CartEventProducer</code>) wraps its <code>ProduceAsync</code> call in <code>KafkaRetryPolicy</code>. Underneath that, the Confluent Kafka <code>ProducerConfig</code> itself sets <code>EnableIdempotence = true</code>, <code>Acks = Acks.All</code>, <code>MessageSendMaxRetries = 3</code> — so there's broker-level idempotence/retry stacked under the application-level Polly retry.</p>
+    <div class="callout note"><div class="callout-title">💡 Note</div>No circuit breaker exists anywhere in the codebase — a downstream outage causes repeated retries rather than a fast-fail/open-circuit response. Fine at current scale; worth revisiting if a dependency's outage duration starts to matter for request latency under load.</div>
+  </section>
+
+  <section class="block" id="contracts">
+    <h2><span class="num">6</span> Kafka event contracts — the shared schema catalog</h2>
+    <p class="section-intro">Every event record lives in <code>Shared.Contracts</code> and is referenced by both its producer and every consumer — no service defines its own copy of another service's event shape. Every event shares the same trailing fields: <code>CorrelationId</code> (string, saga tracing), <code>OccurredAt</code> (DateTime), <code>Version</code> (int, default 1, for schema evolution).</p>
+    <table>
+      <tr><th>Event</th><th>Topic</th><th>Producer</th><th>Consumer(s)</th></tr>
+      <tr><td><code>UserCreatedEvent</code></td><td><code>user-created</code></td><td>Auth</td><td>Notification</td></tr>
+      <tr><td><code>ProductCreatedEvent</code></td><td><code>product-created</code></td><td>Product</td><td>Inventory</td></tr>
+      <tr><td><code>ProductUpdatedEvent</code></td><td><code>product-updated</code></td><td>Product</td><td>—</td></tr>
+      <tr><td><code>CartCheckedOutEvent</code></td><td><code>cart-checkedout</code></td><td>Cart (via outbox)</td><td>Inventory, Product, Notification</td></tr>
+      <tr><td><code>CartCancelledEvent</code></td><td><code>cart-cancelled</code></td><td>Cart (via outbox)</td><td>Auth, Inventory, Product, Notification</td></tr>
+      <tr><td><code>CartRolledBackEvent</code></td><td><code>cart-rolledback</code></td><td>Cart (direct produce, not outbox)</td><td>—</td></tr>
+      <tr><td><code>InventoryReservedEvent</code></td><td><code>inventory-reserved</code></td><td>Inventory</td><td>Cart</td></tr>
+      <tr><td><code>InventoryReservationFailedEvent</code></td><td><code>inventory-reservation-failed</code></td><td>Inventory</td><td>Cart</td></tr>
+      <tr><td><code>InventoryReleasedEvent</code></td><td><code>inventory-released</code></td><td>Inventory</td><td>—</td></tr>
+      <tr><td>dead letters</td><td><code>dlq.product-created</code>, <code>dlq.cart-checkedout</code>, <code>dlq.cart-cancelled</code>, <code>dlq.notifications</code></td><td>each consumer, on retry exhaustion</td><td>manual replay / inspection</td></tr>
+    </table>
+  </section>
+
+  <div class="page-footer-nav">
+    <a class="prev" href="chat.html"><div class="lbl">← Prev</div><div class="name">Chat Service</div></a>
+    <a class="next" href="docker.html"><div class="lbl">Next →</div><div class="name">Dockerizing the Stack</div></a>
+  </div>
+
+  <footer class="site-footer">CommerceSphere internal architecture guide</footer>
+</div>
+
+<script src="../assets/main.js"></script>
+</body>
+</html>

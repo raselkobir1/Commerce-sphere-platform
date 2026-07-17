@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inventory Service — CommerceSphere Architecture Guide</title>
+<link rel="stylesheet" href="../assets/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>:root{--accent:var(--inventory);}</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="../index.html"><span class="logo">🧭</span> CommerceSphere Guide</a>
+    <nav class="topnav">
+      <a href="../index.html">Overview</a>
+      <a href="gateway.html">Gateway</a>
+      <a href="auth.html">Auth</a>
+      <a href="product.html">Product</a>
+      <a href="inventory.html">Inventory</a>
+      <a href="cart.html">Cart</a>
+      <a href="notification.html">Notification</a>
+      <a href="chat.html">Chat</a>
+      <a href="shared.html">Shared Libs</a>
+      <a href="docker.html">Dockerize</a>
+    </nav>
+    <div class="spacer"></div>
+    <button class="theme-toggle" id="theme-toggle">🌙 Dark</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="page-head">
+    <a class="back-link" href="../index.html">← Back to overview</a>
+    <div class="kicker"><span class="dot"></span> Domain service · Stock &amp; reservations</div>
+    <h1>📦 Inventory Service</h1>
+    <p class="dek">A hybrid: a synchronous REST reservation API guarded by Redis idempotency keys and a Redis distributed lock around every stock mutation, plus three background Kafka consumers keeping stock in sync with the catalog and the checkout saga — and the service that fires the saga's success/failure signal back to Cart.</p>
+    <div class="meta-row">
+      <span class="badge" style="--accent:var(--inventory)">src/Services/Inventory</span>
+      <span class="badge" style="--accent:var(--inventory)">Port 5035 / 7267</span>
+      <span class="badge" style="--accent:var(--inventory)">Postgres :5435</span>
+      <span class="badge" style="--accent:var(--inventory)">3 consumers · 3 producers</span>
+    </div>
+  </div>
+
+  <div class="toc">
+    <a href="#highlevel">High-level</a>
+    <a href="#reserve">Reservation logic</a>
+    <a href="#consumers">Kafka consumers</a>
+    <a href="#producers">Kafka producers</a>
+    <a href="#compensation">Compensation</a>
+    <a href="#idempotency">Redis idempotency</a>
+    <a href="#lock">Distributed lock</a>
+    <a href="#adjust-receive">Adjust vs. receive</a>
+  </div>
+
+  <section class="block" id="highlevel">
+    <h2><span class="num">1</span> High-level: not a "reserve" topic — a synchronous API</h2>
+    <p class="section-intro">A common misconception: Cart doesn't publish a "reserve stock" event that Inventory consumes. Cart calls <code>POST /api/inventory/reserve</code> <b>synchronously</b>, and Inventory then <em>publishes</em> the outcome for Cart's saga consumer to react to asynchronously. Kafka drives the compensation/sync side, not the initial ask.</p>
+    <div class="diagram">
+      <pre class="mermaid">
+flowchart LR
+    PROD["🏷️ Product Service"] -->|"product-created"| K1[("Kafka")]
+    K1 --> PC["ProductCreatedConsumer<br/>(creates InventoryItem)"]
+    CART["🛒 Cart Service"] -->|"POST /reserve (sync REST)"| RES["InventoryManager.ReserveAsync"]
+    RES -->|"success"| K2[("inventory-reserved")]
+    RES -->|"failure"| K3[("inventory-reservation-failed")]
+    K2 --> CART
+    K3 --> CART
+    CART -->|"cart-checkedout"| K4[("Kafka")]
+    K4 --> CO["CartCheckedOutConsumer<br/>(sells stock, confirms reservation)"]
+    CART -->|"cart-cancelled"| K5[("Kafka")]
+    K5 --> CC["CartCancelledConsumer<br/>(restocks, cancels reservation)"]
+      </pre>
+    </div>
+  </section>
+
+  <section class="block" id="reserve">
+    <h2><span class="num">2</span> Reservation logic — all-or-nothing per SKU</h2>
+    <div class="code-block">
+      <div class="file">📄 src/Services/Inventory/CommerceSphere.InventoryService.Domain/Entities/InventoryItem.cs</div>
+      <pre><code class="language-csharp">public void Reserve(int qty)
+{
+    if (qty &lt;= 0) throw new BusinessException("Reserve quantity must be greater than zero.");
+    if (QuantityAvailable &lt; qty)
+        throw new BusinessException(
+            $"Insufficient stock for SKU '{Sku}'. Available: {QuantityAvailable}, Requested: {qty}.");
+    QuantityReserved += qty;
+    SetUpdated();
+}
+// QuantityAvailable => QuantityOnHand - QuantityReserved (computed — reserved tracked separately from on-hand)</code></pre>
+    </div>
+    <p><code>InventoryManager.ReserveAsync</code> opens a DB transaction, loops every requested SKU calling <code>Reserve(qty)</code>. If <b>any</b> line fails — SKU not found or insufficient stock — the whole transaction rolls back: no partial reservations across a multi-item cart. On success it commits, publishes <code>InventoryReservedEvent</code>, and marks the idempotency key processed; on failure it rolls back and publishes <code>InventoryReservationFailedEvent</code> instead.</p>
+    <p>Before touching the DB at all, it now acquires a <a class="inline-link" href="shared.html#lock">Redis lock</a> over every SKU in the request (sorted, via <code>AcquireAllAsync</code>) — see <a class="inline-link" href="#lock">§7</a> for why that matters. The DB transaction itself changed shape too:</p>
+    <div class="code-block">
+      <div class="file">📄 UnitOfWork/UnitOfWork.cs</div>
+      <pre><code class="language-csharp">// db.Database.BeginTransactionAsync() directly is INCOMPATIBLE with EnableRetryOnFailure —
+// any query run inside that manual transaction throws InvalidOperationException. This wasn't
+// hit before because nothing in the live checkout path ever called ReserveAsync/ReleaseAsync.
+public async Task&lt;T&gt; ExecuteInTransactionAsync&lt;T&gt;(Func&lt;Task&lt;T&gt;&gt; operation, CancellationToken ct = default)
+{
+    var strategy = db.Database.CreateExecutionStrategy();
+    return await strategy.ExecuteAsync(async () =>
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        try { var result = await operation(); await transaction.CommitAsync(ct); return result; }
+        catch { await transaction.RollbackAsync(ct); throw; }
+    });
+}</code></pre>
+    </div>
+    <div class="callout gap"><div class="callout-title">🕳️ Found while verifying the lock fix, not related to it</div>Every call to <code>ReserveAsync</code>/<code>ReleaseAsync</code> threw a 500 before this — a pre-existing EF Core / Npgsql incompatibility that had simply never been exercised, since the real checkout path bypasses these methods entirely (see the high-level diagram above: Cart calls <code>POST /reserve</code> synchronously, but nothing in the live <code>cart-checkedout</code> flow does).</div>
+  </section>
+
+  <section class="block" id="consumers">
+    <h2><span class="num">3</span> Kafka consumers — DB-state idempotency, not Redis</h2>
+    <div class="code-block">
+      <div class="file">📄 src/Services/Inventory/CommerceSphere.InventoryService.Infrastructure/Kafka/Consumers/ProductCreatedConsumer.cs</div>
+      <pre><code class="language-csharp">var exists = await db.InventoryItems.AnyAsync(i => i.ProductId == evt.ProductId, ct);
+if (exists) { logger.LogInformation("...Skipping."); return; }   // idempotent re-delivery guard
+
+var inventoryItem = InventoryItem.Create(evt.ProductId, evt.Sku, evt.InitialStock, reorderLevel: 10);
+await db.InventoryItems.AddAsync(inventoryItem, ct);
+await db.SaveChangesAsync(ct);</code></pre>
+    </div>
+    <div class="code-block">
+      <div class="file">📄 .../Kafka/Consumers/CartCheckedOutConsumer.cs</div>
+      <pre><code class="language-csharp">if (await db.Reservations.AnyAsync(r => r.CartId == evt.CartId, ct))
+{
+    logger.LogInformation("Checkout {CartId} already applied. Skipping.", evt.CartId);
+    return;
+}
+
+// Lock every SKU being sold (sorted, via AcquireAllAsync) before reading ANY of them —
+// no other consumer instance can touch these rows until this checkout is fully saved.
+var lockKeys = evt.Items.Select(i => $"inventory:{i.ProductId}");
+await using var stockLock = await lockService.AcquireAllAsync(lockKeys, LockExpiry, LockWait, ct)
+    ?? throw new InvalidOperationException($"Could not acquire inventory lock for checkout {evt.CartId}.");
+
+foreach (var item in evt.Items)
+{
+    var inv = await db.InventoryItems.FirstOrDefaultAsync(i => i.ProductId == item.ProductId, ct);
+    inv?.Sell(item.Quantity);   // throws BusinessException on insufficient stock — see below
+}
+var reservation = Reservation.Create(evt.CartId, evt.UserId, evt.CartId.ToString(), items);
+reservation.Confirm();
+await db.Reservations.AddAsync(reservation, ct);
+await db.SaveChangesAsync(ct);</code></pre>
+    </div>
+    <div class="code-block">
+      <div class="file">📄 Domain/Entities/InventoryItem.cs</div>
+      <pre><code class="language-csharp">// Was: QuantityOnHand = Math.Max(0, QuantityOnHand - qty);  — clamped to zero, so an oversell
+// couldn't even be DETECTED, let alone prevented. Now:
+public void Sell(int qty)
+{
+    if (qty &lt;= 0) throw new BusinessException("Sell quantity must be greater than zero.");
+    if (QuantityOnHand &lt; qty)
+        throw new BusinessException($"Insufficient stock for SKU '{Sku}'. On hand: {QuantityOnHand}, Requested: {qty}.");
+    QuantityOnHand -= qty;
+    QuantityReserved = Math.Max(0, QuantityReserved - qty);
+    SetUpdated();
+}</code></pre>
+    </div>
+    <div class="callout ok"><div class="callout-title">✅ Verified live</div>Checked out a cart for 5 units against 1 in stock: <code>Sell()</code> threw, the consumer retried 3× with backoff, then routed the full event payload to <code>dlq.cart-checkedout</code> — and stock stayed at 1. Before this fix the same scenario silently clamped to 0 and fabricated a "confirmed" reservation with no trace anywhere.</div>
+    <p>All three consumers (<code>ProductCreatedConsumer</code>, <code>CartCheckedOutConsumer</code>, <code>CartCancelledConsumer</code>) are <code>BackgroundService</code>s with manual commit, exponential-backoff retry, and DLQ on exhaustion — same shape as every other consumer in the platform. <code>CartCancelledConsumer</code>'s restock loop takes the same per-SKU lock before calling <code>ReceiveStock</code>.</p>
+  </section>
+
+  <section class="block" id="producers">
+    <h2><span class="num">4</span> Kafka producers — the saga's async signal</h2>
+    <div class="code-block">
+      <div class="file">📄 .../Kafka/Producers/InventoryEventProducer.cs</div>
+      <pre><code class="language-csharp">public async Task PublishReservedAsync(InventoryReservedEvent evt, CancellationToken ct = default)
+{
+    var policy = ResiliencePolicies.KafkaRetryPolicy(logger);
+    await policy.ExecuteAsync(async () =>
+    {
+        var message = new Message&lt;string, string&gt;
+        {
+            Key = evt.ReservationId.ToString(),
+            Value = JsonSerializer.Serialize(evt),
+            Headers = new Headers { /* event-type, version, correlation-id */ }
+        };
+        await _producer.ProduceAsync("inventory-reserved", message, ct);
+    });
+}</code></pre>
+    </div>
+    <table>
+      <tr><th>Event</th><th>Topic</th><th>Key</th><th>Trigger</th></tr>
+      <tr><td><code>InventoryReservedEvent</code></td><td><code>inventory-reserved</code></td><td>ReservationId</td><td>Reservation succeeds</td></tr>
+      <tr><td><code>InventoryReservationFailedEvent</code></td><td><code>inventory-reservation-failed</code></td><td>CartId</td><td>Reservation fails (insufficient stock)</td></tr>
+      <tr><td><code>InventoryReleasedEvent</code></td><td><code>inventory-released</code></td><td>ReservationId</td><td>Explicit/manual release</td></tr>
+    </table>
+  </section>
+
+  <section class="block" id="compensation">
+    <h2><span class="num">5</span> Compensation — two independent rollback paths</h2>
+    <div class="code-block">
+      <div class="file">📄 src/Services/Inventory/CommerceSphere.InventoryService.Domain/Entities/InventoryItem.cs</div>
+      <pre><code class="language-csharp">public void Release(int qty)
+{
+    if (qty &lt;= 0) throw new BusinessException("Release quantity must be greater than zero.");
+    // Math.Max guards against a reserved count going negative if a release is replayed
+    QuantityReserved = Math.Max(0, QuantityReserved - qty);
+    SetUpdated();
+}</code></pre>
+    </div>
+    <p><b>(a) Explicit release</b> — <code>InventoryManager.ReleaseAsync</code>, application-triggered, publishes <code>InventoryReleasedEvent</code>. <b>(b) Event-driven restock on cancellation</b> — <code>CartCancelledConsumer</code> restocks quantities already sold, guarded against replay by checking <code>Reservation.Status == Confirmed</code> before acting:</p>
+    <div class="code-block">
+      <pre><code class="language-csharp">if (reservation.Status != ReservationStatus.Confirmed)
+{
+    logger.LogInformation("Cancel for {CartId} already restocked. Skipping.", evt.CartId);
+    return;
+}
+foreach (var item in evt.Items) { var inv = ...; inv?.ReceiveStock(item.Quantity); }
+reservation.Cancel();</code></pre>
+    </div>
+  </section>
+
+  <section class="block" id="idempotency">
+    <h2><span class="num">6</span> Redis idempotency — atomic claim, not check-then-mark</h2>
+    <div class="code-block">
+      <div class="file">📄 Application/Managers/InventoryManager.cs — ReserveAsync</div>
+      <pre><code class="language-csharp">// Atomically claim the key with a SHORT TTL up front. If the reservation goes on to fail
+// (insufficient stock, SKU not found), the claim just expires — a legitimate retry isn't
+// blocked. Only on success is it re-marked with a long TTL.
+if (!await idempotencyService.TryMarkProcessedAsync(request.IdempotencyKey, TimeSpan.FromMinutes(1), ct))
+    throw new IdempotencyException(request.IdempotencyKey);
+// ... reservation succeeds ...
+await idempotencyService.MarkProcessedAsync(request.IdempotencyKey, TimeSpan.FromHours(24), ct);</code></pre>
+    </div>
+    <p>Used in <code>ReserveAsync</code>, guarding client retries of the same HTTP call via the <code>X-Idempotency-Key</code> header — a replay throws <code>IdempotencyException</code> (409), verified live: firing the same key twice returns <code>200</code> then a clean <code>409</code>. See <a class="inline-link" href="shared.html#idempotency">Shared Libraries</a> for why this claim-then-extend shape replaced a plain <code>IsProcessedAsync</code>/<code>MarkProcessedAsync</code> pair. The three Kafka consumers still deliberately use <b>DB-state checks</b> instead (row existence, <code>Reservation.Status</code>) rather than Redis — HTTP-facing idempotency uses Redis, event-driven idempotency uses the database as the source of truth.</p>
+  </section>
+
+  <section class="block" id="lock">
+    <h2><span class="num">7</span> Distributed lock — closing the concurrent-reservation race</h2>
+    <p class="section-intro">Idempotency alone doesn't stop two <i>different</i> requests from racing on the same SKU — two different carts, two different idempotency keys, both reserving the last unit of the same product. Every stock mutation in this service (<code>ReserveAsync</code>, <code>ReleaseAsync</code>, <code>AdjustStockAsync</code>, <code>ReceiveStockAsync</code>, and both Kafka consumers) now wraps its read-modify-write in a <a class="inline-link" href="shared.html#lock">Redis lock</a> keyed by <code>inventory:{'{'}productId{'}'}</code>.</p>
+    <div class="code-block">
+      <div class="file">📄 Application/Managers/InventoryManager.cs</div>
+      <pre><code class="language-csharp">private static string StockLockKey(Guid productId) => $"inventory:{productId}";
+
+// Single SKU (AdjustStockAsync / ReceiveStockAsync):
+await using var stockLock = await lockService.AcquireAsync(StockLockKey(request.ProductId), LockExpiry, LockWait, ct)
+    ?? throw new BusinessException("Inventory is busy processing another update for this item. Please retry.");
+
+// Multiple SKUs in one call (ReserveAsync / ReleaseAsync) — sorted, deadlock-free:
+var lockKeys = request.Items.Select(i => StockLockKey(i.ProductId));
+await using var stockLock = await lockService.AcquireAllAsync(lockKeys, LockExpiry, LockWait, ct)
+    ?? throw new BusinessException("Inventory is busy processing another update for one of these items. Please retry.");</code></pre>
+    </div>
+    <div class="callout ok"><div class="callout-title">✅ Verified live, two ways</div>
+      <b>Pure concurrency:</b> 20 truly-concurrent <code>POST /inventory/receive</code> calls (+1 each) on one SKU → all <code>200</code>, final stock exactly right, zero lost updates.<br>
+      <b>Race + business rule together:</b> two concurrent <code>POST /inventory/reserve</code> calls for 20 units each against 30 available → first succeeded; the second <i>waited for the lock, then read the already-updated stock fresh</i> and correctly got <code>422 Insufficient stock. Available: 10, Requested: 20</code> — not a stale read, not a raw DB exception, not a silent oversell.
+    </div>
+  </section>
+
+  <section class="block" id="adjust-receive">
+    <h2><span class="num">8</span> Manual stock corrections — Adjust vs. Receive, easy to conflate</h2>
+    <p class="section-intro">Beyond the saga's reserve/release/sell/restock flow, admins have two direct write paths onto <code>InventoryItem</code> that never touch Kafka at all — worth naming since they're semantically different operations, not two names for the same thing.</p>
+    <table>
+      <tr><th>Endpoint</th><th>Method</th><th>Semantics</th></tr>
+      <tr><td><code>POST /api/inventory/adjust</code></td><td><code>InventoryManager.AdjustStockAsync</code></td><td>Sets <code>QuantityOnHand</code> to an <b>absolute</b> new value — a correction/audit action (e.g. after a physical stocktake finds a discrepancy).</td></tr>
+      <tr><td><code>POST /api/inventory/receive</code></td><td><code>InventoryManager.ReceiveStockAsync</code></td><td><b>Adds</b> a received quantity on top of the current count — a purchase-order/restock-delivery action.</td></tr>
+    </table>
+    <p>Both are gated by <code>[HasPermission("inventory:edit")]</code> and both invalidate the Redis cache entry for that item afterward, same as every other mutation in this service. A separate paged <code>GET /api/inventory</code> list (<code>inventory:view</code>) backs the admin grid — distinct from the per-product <code>GET /api/inventory/product/{id}</code> lookup other services use for read access.</p>
+  </section>
+
+  <div class="page-footer-nav">
+    <a class="prev" href="product.html"><div class="lbl">← Prev</div><div class="name">Product Service</div></a>
+    <a class="next" href="cart.html"><div class="lbl">Next →</div><div class="name">Cart Service</div></a>
+  </div>
+
+  <footer class="site-footer">CommerceSphere internal architecture guide</footer>
+</div>
+
+<script src="../assets/main.js"></script>
+</body>
+</html>

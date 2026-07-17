@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Product Service — CommerceSphere Architecture Guide</title>
+<link rel="stylesheet" href="../assets/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>:root{--accent:var(--product);}</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="../index.html"><span class="logo">🧭</span> CommerceSphere Guide</a>
+    <nav class="topnav">
+      <a href="../index.html">Overview</a>
+      <a href="gateway.html">Gateway</a>
+      <a href="auth.html">Auth</a>
+      <a href="product.html">Product</a>
+      <a href="inventory.html">Inventory</a>
+      <a href="cart.html">Cart</a>
+      <a href="notification.html">Notification</a>
+      <a href="chat.html">Chat</a>
+      <a href="shared.html">Shared Libs</a>
+      <a href="docker.html">Dockerize</a>
+    </nav>
+    <div class="spacer"></div>
+    <button class="theme-toggle" id="theme-toggle">🌙 Dark</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="page-head">
+    <a class="back-link" href="../index.html">← Back to overview</a>
+    <div class="kicker"><span class="dot"></span> Domain service · Catalog</div>
+    <h1>🏷️ Product Service</h1>
+    <p class="dek">Looks like CRUD from the controller list, isn't underneath: a hand-rolled signed Cloudinary upload pipeline with on-ingest resizing and baked-in delivery optimization, a read-through Redis cache, and a commit-then-produce Kafka publish with no outbox — a real dual-write trade-off worth understanding.</p>
+    <div class="meta-row">
+      <span class="badge" style="--accent:var(--product)">src/Services/Product</span>
+      <span class="badge" style="--accent:var(--product)">Port 5095 / 7060</span>
+      <span class="badge" style="--accent:var(--product)">Postgres :5434</span>
+      <span class="badge" style="--accent:var(--product)">Produces product-created / product-updated</span>
+      <span class="badge" style="--accent:var(--product)">Bulk Excel import</span>
+    </div>
+  </div>
+
+  <div class="toc">
+    <a href="#highlevel">High-level</a>
+    <a href="#cloudinary">Cloudinary pipeline</a>
+    <a href="#kafka">Kafka producer</a>
+    <a href="#bulk-import">Bulk Excel import</a>
+    <a href="#cache">Redis cache</a>
+    <a href="#taxonomy">Categories &amp; banners</a>
+    <a href="#business">Business rules</a>
+  </div>
+
+  <section class="block" id="highlevel">
+    <h2><span class="num">1</span> High-level flow</h2>
+    <div class="diagram">
+      <pre class="mermaid">
+flowchart LR
+    ADM["🧑‍💼 Admin"] -->|"upload image"| IMG["ImageController"]
+    IMG --> CLD["☁️ Cloudinary<br/>(signed REST upload)"]
+    CLD -->|"secure_url"| IMG
+    ADM -->|"create product<br/>(pastes url)"| PC["ProductController"]
+    PC --> DB[("Postgres<br/>product-db")]
+    PC -->|"after commit"| K[("Kafka:<br/>product-created")]
+    K --> INV["📦 Inventory Service<br/>(creates matching stock record)"]
+    STORE["🛍️ Storefront"] -->|"GET /products/{id}"| PC
+    PC -->|"cache-aside"| REDIS[("Redis<br/>product:{id}, 5 min TTL")]
+      </pre>
+    </div>
+  </section>
+
+  <section class="block" id="cloudinary">
+    <h2><span class="num">2</span> Cloudinary image pipeline — the actual complex part</h2>
+    <p class="section-intro">Upload is decoupled from Create/Update Product: admins upload an image first, get back a URL, then paste that URL into the product payload. There's no Cloudinary SDK involved — it's a hand-rolled signed multipart upload.</p>
+    <div class="code-block">
+      <div class="file">📄 src/Services/Product/CommerceSphere.ProductService.API/Controllers/ImageController.cs</div>
+      <pre><code class="language-csharp">[HttpPost]
+[RequestSizeLimit(MaxBytes + 1024)]
+public async Task&lt;IActionResult&gt; Upload(IFormFile? file, CancellationToken ct)
+{
+    if (file is null || file.Length == 0) throw new BusinessException("No image file was provided.");
+    if (file.Length > MaxBytes) throw new BusinessException("Image is too large (max 5 MB).");
+    if (!AllowedTypes.Contains(file.ContentType)) throw new BusinessException("Unsupported image type...");
+
+    using var buffer = new MemoryStream();
+    await file.CopyToAsync(buffer, ct);
+    var url = await imageStorage.UploadAsync(buffer.ToArray(), file.FileName, file.ContentType, ct);
+    return Ok(ApiResponse&lt;object&gt;.Ok(new { url }, "Image uploaded"));
+}</code></pre>
+    </div>
+    <p><b>Resize on ingest</b> — Cloudinary itself scales the image down (never up) before storing it, driven by a signed transformation string:</p>
+    <div class="code-block">
+      <div class="file">📄 CloudinaryOptions.cs</div>
+      <pre><code class="language-csharp">public int MaxWidth { get; set; } = 1600;
+public int MaxHeight { get; set; } = 1600;
+public string Quality { get; set; } = "auto:good";
+public string Transformation => $"c_limit,w_{MaxWidth},h_{MaxHeight},q_{Quality}";</code></pre>
+    </div>
+    <p><b>Delivery optimization</b> (<code>f_auto,q_auto</code>) isn't part of the upload call at all — it's string-spliced into the returned <code>secure_url</code> right after the fact, so every stored <code>ImageUrl</code> already carries automatic format/quality negotiation with zero work from any consumer:</p>
+    <div class="code-block">
+      <div class="file">📄 CloudinaryImageStorage.cs</div>
+      <pre><code class="language-csharp">private string ApplyDeliveryTransformation(string secureUrl)
+{
+    var t = _opts.DeliveryTransformation;   // "f_auto,q_auto"
+    const string marker = "/upload/";
+    if (string.IsNullOrWhiteSpace(t) || !secureUrl.Contains(marker)) return secureUrl;
+    return secureUrl.Replace(marker, $"{marker}{t}/");
+}</code></pre>
+    </div>
+    <div class="callout note"><div class="callout-title">💡 Note</div>The upload signature is SHA1 over <code>folder+timestamp+transformation+api_secret</code>. A real gotcha the code works around in a comment: .NET's default <code>Content-Disposition</code> header leaves field names unquoted, which Cloudinary's strict signature parser rejects — the code quotes them explicitly. Registered as a <b>typed <code>HttpClient</code></b> via <code>IHttpClientFactory</code> (30s timeout) to avoid socket exhaustion, not a bare <code>new HttpClient()</code>.</div>
+  </section>
+
+  <section class="block" id="kafka">
+    <h2><span class="num">3</span> Kafka — commit-then-produce, no outbox</h2>
+    <div class="code-block">
+      <div class="file">📄 src/Services/Product/CommerceSphere.ProductService.Application/Managers/ProductManager.cs</div>
+      <pre><code class="language-csharp">await uow.Products.AddAsync(product, ct);
+await uow.SaveChangesAsync(ct);
+// Publish AFTER saving so the product ID already exists before Inventory
+// tries to create a matching InventoryItem.
+var evt = new ProductCreatedEvent(product.Id, product.Name, product.Sku, product.Price,
+    product.Stock, correlationId, DateTime.UtcNow);
+await eventProducer.PublishProductCreatedAsync(evt, ct);</code></pre>
+    </div>
+    <div class="callout gap">
+      <div class="callout-title">🕳️ Trade-off to flag</div>
+      Unlike Cart's transactional outbox (see the <a class="inline-link" href="cart.html#outbox">Cart page</a>), Product publishes directly to Kafka after the DB commit — no outbox row. If the process crashes between <code>SaveChangesAsync</code> and <code>PublishProductCreatedAsync</code>, Inventory never learns about the new product and no automatic retry recovers it. Mitigated only by a Polly retry policy around the produce call itself, not by durable at-least-once delivery.
+    </div>
+    <p>Contract: <code>ProductCreatedEvent(ProductId, Name, Sku, Price, InitialStock, CorrelationId, OccurredAt, Version)</code> from <code>Shared.Contracts</code>. A sibling <code>ProductUpdatedEvent</code> fires from <code>UpdateAsync</code>/<code>ActivateAsync</code>/<code>DeactivateAsync</code>. Product also <b>consumes</b> <code>cart-checkedout</code> and <code>cart-cancelled</code> to adjust <code>Stock</code> via <code>DecreaseStock</code>/<code>IncreaseStock</code>.</p>
+  </section>
+
+  <section class="block" id="bulk-import">
+    <h2><span class="num">4</span> Bulk Excel import — a queued background job, not a request-blocking upload</h2>
+    <p class="section-intro">Admins upload a spreadsheet of hundreds/thousands of products through <code>ProductImportController</code> (<code>api/products/import</code>). This is genuinely non-trivial: the HTTP request only stores the file and enqueues a job — parsing, validation, deduping, insertion and event publishing all happen out-of-band in a background worker.</p>
+    <div class="diagram">
+      <pre class="mermaid">
+sequenceDiagram
+    participant Admin
+    participant Ctrl as ProductImportController
+    participant Store as IBulkImportFileStore
+    participant DB as Postgres
+    participant Q as BulkImportQueue (Channel)
+    participant W as BulkImportBackgroundWorker
+    participant K as Kafka
+
+    Admin->>Ctrl: GET /import/template
+    Ctrl-->>Admin: Products.xlsx (ClosedXML, headers + example row)
+
+    Admin->>Ctrl: POST /import (file)
+    Ctrl->>Store: SaveUploadAsync(stream)
+    Ctrl->>DB: insert BulkImportJob (Status=Pending)
+    Ctrl->>Q: EnqueueAsync(jobId)
+    Ctrl-->>Admin: 202 Accepted { jobId }
+
+    W->>Q: dequeue jobId
+    W->>DB: job.Status = Processing
+    loop batches of 5,000 rows
+        W->>W: parse + validate + dedupe SKUs
+        W->>DB: COPY BINARY insert valid rows
+        W->>K: PublishProductCreatedBatchAsync (fire-and-forget + Flush)
+    end
+    W->>DB: job.Status = Completed / CompletedWithErrors
+    Admin->>Ctrl: GET /import/{jobId}
+    Ctrl-->>Admin: progress (TotalRows/Processed/Succeeded/Failed)
+    Admin->>Ctrl: GET /import/{jobId}/errors
+    Ctrl-->>Admin: errors.xlsx (Row/Sku/Reason)
+      </pre>
+    </div>
+
+    <h3>Template + parsing — ClosedXML</h3>
+    <p>Both the template generator and the parser use <b>ClosedXML</b> (`XLWorkbook`, DOM-based). The template ships a <code>Products</code> sheet (columns <code>Name, Description, Sku, Price, Category, ImageUrl, InitialStock</code>, required subset in bold) plus an <code>Instructions</code> sheet explaining that duplicate/existing SKUs get skipped and reported. A code comment explicitly flags the memory trade-off — loading a full workbook costs ~150-300MB for 100K rows, judged acceptable "for an infrequent admin background job," with a SAX-based <code>DocumentFormat.OpenXml</code> reader suggested if files get an order of magnitude bigger.</p>
+
+    <h3>Job entity + status states</h3>
+    <div class="code-block">
+      <div class="file">📄 src/Services/Product/CommerceSphere.ProductService.Domain/Entities/BulkImportJob.cs</div>
+      <pre><code class="language-csharp">public class BulkImportJob : BaseEntity
+{
+    public string FileName { get; private set; } = string.Empty;
+    public BulkImportStatus Status { get; private set; }
+    public int TotalRows { get; private set; }
+    public int ProcessedRows { get; private set; }
+    public int SucceededRows { get; private set; }
+    public int FailedRows { get; private set; }
+    public bool HasErrorReport { get; private set; }
+    // Pending(0) -> Processing(1) -> Completed(2) / CompletedWithErrors(3) / Failed(4)
+}</code></pre>
+    </div>
+    <p>The upload endpoint saves the raw file <i>before</i> creating the job row, so a worker can never dequeue a job whose file is missing. Enqueue is an in-memory, single-reader <code>System.Threading.Channels.Channel&lt;Guid&gt;</code> (<code>BulkImportQueue</code>) — fast, but a process restart loses any queued-but-undequeued job id; the DB row is left <code>Pending</code> with no startup requeue implemented yet.</p>
+
+    <h3>Per-row validation + error report</h3>
+    <div class="code-block">
+      <div class="file">📄 ProductImportService.cs</div>
+      <pre><code class="language-csharp">var validation = rowValidator.Validate(row);
+if (!validation.IsValid)
+{
+    errors.Add(new ProductImportError(
+        row.RowNumber, row.Sku, string.Join("; ", validation.Errors.Select(e => e.ErrorMessage))));
+    continue;
+}
+// duplicate SKU within the SAME file:
+if (!seenInFile.Add(row.Sku.Trim().ToUpperInvariant()))
+{
+    errors.Add(new ProductImportError(row.RowNumber, row.Sku, "Duplicate SKU within the uploaded file."));
+    continue;
+}
+// SKU already exists in the catalog (checked via one ANY(@skus) query before the batch insert):
+if (existingSkus.Contains(row.Sku)) { errors.Add(new ProductImportError(row.RowNumber, row.Sku, "A product with this SKU already exists.")); continue; }</code></pre>
+    </div>
+    <p><code>GET /{jobId}/errors</code> doesn't return JSON — it streams back an <b>.xlsx report</b> (columns <code>Row / Sku / Reason</code>) built the same way as the template, only persisted if at least one row failed. Rows with a cell-conversion failure (<code>ParseError</code>, e.g. non-numeric <code>Price</code>) skip field-level validation entirely and go straight to the error list.</p>
+
+    <h3>Bulk insert — PostgreSQL binary <code>COPY</code>, not EF SaveChanges</h3>
+    <p>Rows are chunked into batches of <b>5,000</b>. Valid rows in a batch bypass EF's change tracker completely and go through <code>NpgsqlBinaryImporter</code>:</p>
+    <div class="code-block">
+      <div class="file">📄 NpgsqlProductBulkInserter.cs</div>
+      <pre><code class="language-csharp">private const string CopyCommand =
+    "COPY products (id, name, description, sku, price, category, image_url, " +
+    "is_active, is_published, stock, created_at, updated_at) FROM STDIN (FORMAT BINARY)";
+
+await using var writer = await connection.BeginBinaryImportAsync(CopyCommand, ct);
+foreach (var p in products) { await writer.StartRowAsync(ct); await writer.WriteAsync(...); }
+await writer.CompleteAsync(ct);</code></pre>
+    </div>
+    <p>Imported products land as drafts (<code>IsPublished = false</code>), same as single-product creation.</p>
+
+    <h3>Kafka — batched fire-and-forget, not the awaited single-event path</h3>
+    <div class="code-block">
+      <div class="file">📄 ProductEventProducer.cs</div>
+      <pre><code class="language-csharp">public Task PublishProductCreatedBatchAsync(IEnumerable&lt;ProductCreatedEvent&gt; events, CancellationToken ct = default)
+{
+    foreach (var evt in events)
+    {
+        var message = new Message&lt;string, string&gt; { Key = evt.ProductId.ToString(), Value = JsonSerializer.Serialize(evt) };
+        // Non-blocking enqueue: the delivery handler only logs failures, never retries.
+        _producer.Produce("product-created", message, report =>
+        {
+            if (report.Error.IsError) logger.LogError("Failed to deliver batched event. ProductId: {ProductId}", evt.ProductId);
+        });
+    }
+    _producer.Flush(ct);   // block once, at the end, until every queued message is delivered/errored
+    return Task.CompletedTask;
+}</code></pre>
+    </div>
+    <p>This trades per-message retry/backpressure (which the single-product <code>PublishProductCreatedAsync</code> path has, via a Polly retry policy around an awaited <code>ProduceAsync</code>) for throughput: no N-times network-round-trip awaits for N products — librdkafka's internal queue absorbs the burst, and one <code>Flush</code> synchronizes at the end.</p>
+    <div class="callout gap"><div class="callout-title">🕳️ Same dual-write trade-off as single-create, at bigger scale</div>The insert (COPY) and the batch Kafka publish are still two separate steps with no outbox tying them together — a crash between them leaves Inventory missing however many SKUs were in that batch. The <code>ProductCreatedConsumer</code> being idempotent (see the <a class="inline-link" href="inventory.html#consumers">Inventory page</a>) means the recovery path is a manual re-publish, not automatic replay.</div>
+  </section>
+
+  <section class="block" id="cache">
+    <h2><span class="num">5</span> Redis — read-through cache, best-effort</h2>
+    <div class="code-block">
+      <div class="file">📄 src/Services/Product/CommerceSphere.ProductService.Infrastructure/Redis/ProductCacheService.cs</div>
+      <pre><code class="language-csharp">try
+{
+    var value = await _db.StringGetAsync(CacheKey(id));
+    if (value.IsNullOrEmpty) return null;
+    return JsonSerializer.Deserialize&lt;ProductResponse&gt;(value!);
+}
+catch (Exception ex)
+{
+    logger.LogWarning(ex, "Redis GET failed for ProductId: {ProductId}. Falling back to database.", id);
+    return null;   // Redis is a best-effort accelerator, never a hard dependency
+}</code></pre>
+    </div>
+    <p>Key pattern <code>product:{guid}</code>, 5-minute TTL. Every mutation (<code>Create</code>/<code>Update</code>/<code>Activate</code>/<code>Deactivate</code>) invalidates then write-through re-populates the cache.</p>
+  </section>
+
+  <section class="block" id="taxonomy">
+    <h2><span class="num">6</span> Categories &amp; banners — the two storefront-taxonomy siblings, easy to overlook</h2>
+    <p class="section-intro">Two more controllers hang off this service that never come up when people describe "the product API": <code>CategoryController</code> and <code>BannerController</code>. Same permission-gated CRUD shape as everything else, worth naming so they don't get mistaken for missing endpoints.</p>
+    <table>
+      <tr><th></th><th>Shape</th><th>Notes</th></tr>
+      <tr><td><b>Category</b></td><td><code>api/categories</code> — full CRUD, hierarchical via nullable <code>ParentId</code> (added by the <code>AddCategoryParent</code> migration)</td><td>A real separate entity/table with its own admin management screen — but <code>Product.Category</code> itself is still just a trimmed <b>string</b> field (see the <a class="inline-link" href="#business">business rules</a> below), not a foreign key into this table. The two aren't yet linked at the data level.</td></tr>
+      <tr><td><b>Banner</b></td><td><code>api/banners</code> — full CRUD for storefront carousel banners</td><td>Gated by <code>[HasPermission("banners:create/edit/delete")]</code>; the <code>banners</code> menu was one of the entries backfilled by <code>SeedRbacAsync</code> onto existing installs (see the <a class="inline-link" href="auth.html#rbac">Auth RBAC section</a>) rather than present since day one.</td></tr>
+    </table>
+    <p>Public reads (<code>GET</code>) are anonymous for both — the storefront needs the category list and active banners without a login; create/update/delete require the matching <code>[HasPermission]</code> claim, same RBAC model used everywhere else in the platform.</p>
+  </section>
+
+  <section class="block" id="business">
+    <h2><span class="num">7</span> Business rules worth knowing</h2>
+    <ul>
+      <li><b>SKU normalization</b> — <code>Trim().ToUpperInvariant()</code> in both the manager and the domain factory, so <code>"abc-001"</code> and <code>"ABC-001"</code> collide on the uniqueness check → <code>ConflictException</code> (409).</li>
+      <li><b>Draft-first publishing</b> — new products are <code>IsActive=true</code> but <code>IsPublished=false</code>; only storefront-visible after an explicit admin <code>Publish()</code>, supporting bulk publish/unpublish by ID list.</li>
+      <li><b>Stock is never touched via REST</b> — <code>DecreaseStock</code>/<code>IncreaseStock</code> are driven purely by the Kafka consumers reacting to checkout/cancellation, clamped at zero.</li>
+      <li><b>Belt-and-suspenders validation</b> — price/stock non-negativity is checked both in FluentValidation and again inside the domain factory (<code>ArgumentException</code>).</li>
+    </ul>
+  </section>
+
+  <div class="page-footer-nav">
+    <a class="prev" href="auth.html"><div class="lbl">← Prev</div><div class="name">Auth Service</div></a>
+    <a class="next" href="inventory.html"><div class="lbl">Next →</div><div class="name">Inventory Service</div></a>
+  </div>
+
+  <footer class="site-footer">CommerceSphere internal architecture guide</footer>
+</div>
+
+<script src="../assets/main.js"></script>
+</body>
+</html>

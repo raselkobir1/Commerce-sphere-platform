@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notification Service — CommerceSphere Architecture Guide</title>
+<link rel="stylesheet" href="../assets/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>:root{--accent:var(--notification);}</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="../index.html"><span class="logo">🧭</span> CommerceSphere Guide</a>
+    <nav class="topnav">
+      <a href="../index.html">Overview</a>
+      <a href="gateway.html">Gateway</a>
+      <a href="auth.html">Auth</a>
+      <a href="product.html">Product</a>
+      <a href="inventory.html">Inventory</a>
+      <a href="cart.html">Cart</a>
+      <a href="notification.html">Notification</a>
+      <a href="chat.html">Chat</a>
+      <a href="shared.html">Shared Libs</a>
+      <a href="docker.html">Dockerize</a>
+    </nav>
+    <div class="spacer"></div>
+    <button class="theme-toggle" id="theme-toggle">🌙 Dark</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="page-head">
+    <a class="back-link" href="../index.html">← Back to overview</a>
+    <div class="kicker"><span class="dot"></span> Domain service · Reliability engineering showcase</div>
+    <h1>🔔 Notification Service</h1>
+    <p class="dek">A pure consumer with no upstream producer of its own. This is where the platform's reliability patterns are most concentrated: manual-commit consumption, inbox-table idempotency, a dead-letter queue, live SignalR push, and transactional customer email.</p>
+    <div class="meta-row">
+      <span class="badge" style="--accent:var(--notification)">src/Services/Notification</span>
+      <span class="badge" style="--accent:var(--notification)">Port 5240</span>
+      <span class="badge" style="--accent:var(--notification)">Postgres :5438</span>
+      <span class="badge" style="--accent:var(--notification)">/hubs/notifications</span>
+    </div>
+  </div>
+
+  <div class="toc">
+    <a href="#highlevel">High-level</a>
+    <a href="#consumer">Manual-commit consumer</a>
+    <a href="#inbox">Inbox idempotency</a>
+    <a href="#dlq">Dead-letter queue</a>
+    <a href="#channels">Two notification channels</a>
+    <a href="#gap">Operational gap</a>
+  </div>
+
+  <section class="block" id="highlevel">
+    <h2><span class="num">1</span> High-level: one consumer group, three topics, two channels out</h2>
+    <div class="diagram">
+      <pre class="mermaid">
+flowchart LR
+    K1[("user-created")] --> NC["NotificationConsumer<br/>(single BackgroundService)"]
+    K2[("cart-checkedout")] --> NC
+    K3[("cart-cancelled")] --> NC
+    NC -->|"upsert"| CONTACT[("UserContact<br/>read-model")]
+    NC -->|"checkout only"| MAIL["📧 Order confirmation email<br/>(MailKit/SMTP)"]
+    NC -->|"both events"| SIG["📡 SignalR push<br/>/hubs/notifications"]
+    NC -->|"3 retries exhausted"| DLQ[("dlq.notifications")]
+    SIG --> ADMIN["🧑‍💼 Admin dashboard<br/>(live)"]
+    NC -->|"REST feed for initial load"| ADMIN
+      </pre>
+    </div>
+    <div class="callout note"><div class="callout-title">💡 Note</div>Cancellation emails are deliberately <b>not</b> sent from here — that's handled by Auth's <code>CartCancelledConsumer</code> (see the <a class="inline-link" href="auth.html#kafka">Auth page</a>), since Auth owns the email address and Notification only needs a local <code>UserContact</code> copy for the admin feed and checkout confirmations.</div>
+  </section>
+
+  <section class="block" id="consumer">
+    <h2><span class="num">2</span> Manual-commit consumer — resume-from-offset after downtime</h2>
+    <div class="code-block">
+      <div class="file">📄 src/Services/Notification/CommerceSphere.NotificationService.Infrastructure/Kafka/Consumers/NotificationConsumer.cs</div>
+      <pre><code class="language-csharp">var consumerConfig = new ConsumerConfig
+{
+    BootstrapServers = bootstrap,
+    GroupId = ConsumerGroup,
+    AutoOffsetReset = AutoOffsetReset.Earliest,
+    EnableAutoCommit = false
+};
+consumer.Subscribe([CheckedOutTopic, CancelledTopic, UserCreatedTopic]);
+
+while (!stoppingToken.IsCancellationRequested)
+{
+    var result = consumer.Consume(stoppingToken);
+    if (result?.Message?.Value is null) continue;
+    await ProcessWithRetryAsync(result, dlqProducer, stoppingToken);
+    consumer.Commit(result);   // commit only after processing succeeds (or is dead-lettered)
+}</code></pre>
+    </div>
+    <p>Because the commit call sits <b>after</b> processing, a crash mid-handling means the offset never advances — on restart the consumer resumes from the last committed offset and re-delivers that message. Nothing is skipped across downtime. <code>AutoOffsetReset.Earliest</code> also means a brand-new consumer group replays full topic history, which is exactly how the <code>UserContact</code> read-model backfills itself on first deploy.</p>
+  </section>
+
+  <section class="block" id="inbox">
+    <h2><span class="num">3</span> Inbox idempotency — exactly-once notifications despite at-least-once delivery</h2>
+    <div class="code-block">
+      <div class="file">📄 src/Services/Notification/CommerceSphere.NotificationService.Domain/Entities/InboxMessage.cs</div>
+      <pre><code class="language-csharp">public class InboxMessage
+{
+    public string Key { get; private set; } = string.Empty;   // IS the primary key, not a Guid
+    public DateTime ProcessedAt { get; private set; } = DateTime.UtcNow;
+    public static InboxMessage For(string key) => new() { Key = key };
+}</code></pre>
+    </div>
+    <div class="code-block">
+      <div class="file">📄 .../Application/Handlers/OrderEventHandler.cs</div>
+      <pre><code class="language-csharp">var key = $"checkedout:{evt.CartId}";
+if (await uow.Inbox.ExistsAsync(key, ct))
+{
+    logger.LogInformation("Order {OrderId} already notified. Skipping.", evt.CartId);
+    return;                       // redelivered message -> no-op, no double email/notification
+}
+// ... side effects (email, SignalR push) run BEFORE the inbox row commits ...
+await uow.Notifications.AddAsync(notification, ct);
+await uow.Inbox.AddAsync(InboxMessage.For(key), ct);
+await uow.SaveChangesAsync(ct);   // notification row + inbox row committed atomically together</code></pre>
+    </div>
+    <p>Design intent: side effects run <i>before</i> the inbox row is committed, so a transient failure (e.g. SMTP timeout) gets naturally retried by Kafka redelivery rather than silently dropped — while the notification + inbox row commit atomically in one <code>SaveChangesAsync</code>, giving an exactly-once in-app record even across a crash. Cancellation uses key <code>cancelled:{cartId}</code>; <code>user-created</code> skips the inbox entirely since its handler is a natural upsert (idempotent by construction). The <code>Key</code> column is itself the table's primary key, so even a race past the <code>ExistsAsync</code> check fails at the DB constraint level as a backstop.</p>
+  </section>
+
+  <section class="block" id="dlq">
+    <h2><span class="num">4</span> Dead-letter queue — 3 retries, exponential backoff, one shared DLQ</h2>
+    <div class="code-block">
+      <div class="file">📄 NotificationConsumer.cs</div>
+      <pre><code class="language-csharp">private async Task ProcessWithRetryAsync(ConsumeResult&lt;string, string&gt; result, IProducer&lt;string, string&gt; dlq, CancellationToken ct)
+{
+    var attempt = 0;
+    while (attempt &lt; MaxRetries)   // MaxRetries = 3
+    {
+        try { await DispatchAsync(result.Topic, result.Message.Value, ct); return; }
+        catch (Exception ex)
+        {
+            attempt++;
+            if (attempt >= MaxRetries)
+            {
+                var msg = new Message&lt;string, string&gt;
+                {
+                    Key = result.Message.Key, Value = result.Message.Value,
+                    Headers = [new Header("source-topic", Encoding.UTF8.GetBytes(result.Topic))]
+                };
+                await dlq.ProduceAsync("dlq.notifications", msg, ct);   // poison message, one shared DLQ topic
+                return;
+            }
+            await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)), ct);   // 2s, then 4s
+        }
+    }
+}</code></pre>
+    </div>
+    <p>Unlike Cart/Inventory which each have their own per-source DLQ topic, Notification funnels every failure into a <b>single</b> <code>dlq.notifications</code> topic, tagged with a <code>source-topic</code> header so the origin can still be recovered for replay. After either success or dead-lettering, the outer loop still calls <code>consumer.Commit(result)</code> — a poison message's offset <i>is</i> committed, so it can't block the partition forever, at the cost of that one message needing manual recovery from the DLQ.</p>
+  </section>
+
+  <section class="block" id="channels">
+    <h2><span class="num">5</span> Two notification channels</h2>
+    <h3>(a) Admin in-app — SignalR push + REST feed</h3>
+    <div class="code-block">
+      <div class="file">📄 src/Services/Notification/CommerceSphere.NotificationService.API/Realtime/NotificationHub.cs</div>
+      <pre><code class="language-csharp">[Authorize(Roles = "Admin")]
+public class NotificationHub : Hub { }   // pure server -> client push, no client-callable methods
+
+public class SignalRRealtimeNotifier(IHubContext&lt;NotificationHub&gt; hub) : IRealtimeNotifier
+{
+    public Task NotificationCreatedAsync(NotificationResponse n, CancellationToken ct = default) =>
+        hub.Clients.All.SendAsync("notification", n, ct);
+}</code></pre>
+    </div>
+    <p>Since browsers can't set an <code>Authorization</code> header on a WebSocket handshake, the JWT is pulled from the query string specifically for hub paths:</p>
+    <div class="code-block">
+      <pre><code class="language-csharp">opts.Events = new JwtBearerEvents
+{
+    OnMessageReceived = context =>
+    {
+        var accessToken = context.Request.Query["access_token"];
+        if (!string.IsNullOrEmpty(accessToken) && context.HttpContext.Request.Path.StartsWithSegments("/hubs"))
+            context.Token = accessToken;
+        return Task.CompletedTask;
+    }
+};</code></pre>
+    </div>
+    <p>REST feed for initial load / polling fallback: <code>GET /api/notifications</code> (recent 30 + unread count), <code>POST /api/notifications/read</code>, <code>POST /api/notifications/read-all</code> — all <code>[Authorize(Roles = "Admin")]</code>.</p>
+    <h3>(b) Customer email — order confirmation</h3>
+    <div class="code-block">
+      <pre><code class="language-csharp">var contact = await uow.Contacts.GetByIdAsync(evt.UserId, ct);
+if (contact is not null)
+    await email.SendOrderConfirmationAsync(contact.Email, contact.FirstName, orderRef, evt.TotalAmount, itemCount, ct);</code></pre>
+    </div>
+    <p>Provider is MailKit/MimeKit over SMTP (connect → optional authenticate → send), configured via an <code>Email</code> config section (<code>SmtpHost/Port/UseSsl/Username/Password/FromAddress/FromName</code>).</p>
+  </section>
+
+  <section class="block" id="gap">
+    <h2><span class="num">6</span> Operational follow-up</h2>
+    <div class="callout gap"><div class="callout-title">🕳️ Unbounded inbox growth</div>No background job prunes old <code>inbox_messages</code> rows — the table grows forever since every processed event leaves a permanent dedupe marker. A TTL/retention job (delete rows older than N days, since Kafka retention itself bounds how far back a redelivery could ever come from) would be a reasonable addition.</div>
+  </section>
+
+  <div class="page-footer-nav">
+    <a class="prev" href="cart.html"><div class="lbl">← Prev</div><div class="name">Cart Service</div></a>
+    <a class="next" href="chat.html"><div class="lbl">Next →</div><div class="name">Chat Service</div></a>
+  </div>
+
+  <footer class="site-footer">CommerceSphere internal architecture guide</footer>
+</div>
+
+<script src="../assets/main.js"></script>
+</body>
+</html>

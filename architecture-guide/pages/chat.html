@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chat Service — CommerceSphere Architecture Guide</title>
+<link rel="stylesheet" href="../assets/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>:root{--accent:var(--chat);}</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="../index.html"><span class="logo">🧭</span> CommerceSphere Guide</a>
+    <nav class="topnav">
+      <a href="../index.html">Overview</a>
+      <a href="gateway.html">Gateway</a>
+      <a href="auth.html">Auth</a>
+      <a href="product.html">Product</a>
+      <a href="inventory.html">Inventory</a>
+      <a href="cart.html">Cart</a>
+      <a href="notification.html">Notification</a>
+      <a href="chat.html">Chat</a>
+      <a href="shared.html">Shared Libs</a>
+      <a href="docker.html">Dockerize</a>
+    </nav>
+    <div class="spacer"></div>
+    <button class="theme-toggle" id="theme-toggle">🌙 Dark</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="page-head">
+    <a class="back-link" href="../index.html">← Back to overview</a>
+    <div class="kicker"><span class="dot"></span> Domain service · Live support chat</div>
+    <h1>💬 Chat Service</h1>
+    <p class="dek">Easy to miss entirely — it never appears in the Kafka topic table because it doesn't touch Kafka at all. One-to-one live support chat between a customer and any Admin-role agent, persisted via REST first and pushed live over SignalR second. Fully wired into the gateway and docker-compose, not aspirational config.</p>
+    <div class="meta-row">
+      <span class="badge" style="--accent:var(--chat)">src/Services/Chat</span>
+      <span class="badge" style="--accent:var(--chat)">Postgres :chat-db</span>
+      <span class="badge" style="--accent:var(--chat)">/hubs/chat</span>
+      <span class="badge" style="--accent:var(--chat)">No Kafka involved</span>
+      <span class="badge" style="--accent:var(--chat)">Single-instance SignalR (no backplane)</span>
+    </div>
+  </div>
+
+  <div class="toc">
+    <a href="#highlevel">High-level</a>
+    <a href="#persist-then-push">Persist-then-push</a>
+    <a href="#hub">SignalR hub &amp; groups</a>
+    <a href="#model">Domain model &amp; routes</a>
+    <a href="#scaling">Scaling caveat</a>
+  </div>
+
+  <section class="block" id="highlevel">
+    <h2><span class="num">1</span> High-level: not event-driven — request/response + a live push on top</h2>
+    <p class="section-intro">Every other service in this guide talks Kafka. Chat doesn't need to — a chat message only matters to two participants in real time, not to the rest of the platform, so there's no event bus involved at all. It's the simplest service in the repo mechanically, and the easiest one to miss when cataloguing "what talks to what."</p>
+    <div class="diagram">
+      <pre class="mermaid">
+flowchart LR
+    CUST["🧑 Customer<br/>(shop frontend)"] -->|"REST: send message"| API["ChatController<br/>api/chat"]
+    AGENT["🧑‍💼 Support agent<br/>(admin frontend)"] -->|"REST: send message"| API
+    API -->|"persist"| DB[("Postgres<br/>Conversation + ChatMessage")]
+    API -->|"push via IChatNotifier"| HUB["ChatHub<br/>/hubs/chat"]
+    HUB -->|"group: conv:{id}"| CUST
+    HUB -->|"group: conv:{id}"| AGENT
+    HUB -->|"group: support<br/>(inbox live-update)"| AGENT
+      </pre>
+    </div>
+    <p>Each customer has exactly <b>one</b> persistent conversation thread with support — <code>Conversation.Start</code> creates it lazily on first contact, there's no "start a new ticket" concept. Agents see every open conversation in a shared inbox (`support` group), not a per-agent queue.</p>
+  </section>
+
+  <section class="block" id="persist-then-push">
+    <h2><span class="num">2</span> Persist-then-push — REST is the source of truth, SignalR is just delivery</h2>
+    <p class="section-intro">This is the opposite order from Notification's Kafka flow: here, the write happens synchronously in the HTTP request <i>before</i> anything gets pushed. If the SignalR push fails (client offline, hub blip), the message is still safely in Postgres — the next REST fetch of message history picks it up.</p>
+    <div class="code-block">
+      <div class="file">📄 src/Services/Chat/CommerceSphere.ChatService.Application/Managers/ChatManager.cs (shape)</div>
+      <pre><code class="language-csharp">public async Task&lt;ChatMessageResponse&gt; SendMessageAsync(Guid conversationId, SendMessageRequest request, ChatUser sender, CancellationToken ct)
+{
+    var conversation = await uow.Conversations.GetByIdAsync(conversationId, ct)
+        ?? throw new NotFoundException(nameof(Conversation), conversationId);
+
+    var message = ChatMessage.Create(conversationId, sender.Id, sender.Role, sender.Name, request.Content);
+    await uow.Messages.AddAsync(message, ct);
+
+    conversation.RecordActivity(message.Content, message.CreatedAt, unreadForSupport: sender.Role == "Customer");
+    await uow.SaveChangesAsync(ct);   // durable write FIRST
+
+    var response = MapToResponse(message);
+    await notifier.MessageSentAsync(conversationId, response, ct);   // then push live — best-effort
+    return response;
+}</code></pre>
+    </div>
+    <p><code>Conversation</code> denormalizes <code>LastMessageAt</code>/<code>LastMessagePreview</code>/<code>UnreadForSupport</code> directly on the row specifically so the agent inbox list (<code>GET /api/chat/conversations</code>, sorted by recency) is a single flat query — no join against a million-row message table just to render a preview list.</p>
+  </section>
+
+  <section class="block" id="hub">
+    <h2><span class="num">3</span> SignalR hub — two group scopes, JWT over the WebSocket handshake</h2>
+    <div class="code-block">
+      <div class="file">📄 src/Services/Chat/CommerceSphere.ChatService.API/Realtime/ChatHub.cs</div>
+      <pre><code class="language-csharp">public class ChatHub : Hub
+{
+    public async Task JoinConversation(Guid conversationId) =>
+        await Groups.AddToGroupAsync(Context.ConnectionId, $"conv:{conversationId}");
+
+    public async Task LeaveConversation(Guid conversationId) =>
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"conv:{conversationId}");
+
+    public async Task Typing(Guid conversationId) =>
+        await Clients.OthersInGroup($"conv:{conversationId}").SendAsync("typing", Context.User?.Identity?.Name);
+
+    public override async Task OnConnectedAsync()
+    {
+        if (Context.User?.IsInRole("Admin") == true)
+            await Groups.AddToGroupAsync(Context.ConnectionId, "support");   // agents auto-join the shared inbox group
+        await base.OnConnectedAsync();
+    }
+}</code></pre>
+    </div>
+    <table>
+      <tr><th>Group</th><th>Members</th><th>Purpose</th></tr>
+      <tr><td><code>conv:{conversationId}</code></td><td>the customer + any agent(s) viewing that thread</td><td>message delivery, typing indicator</td></tr>
+      <tr><td><code>support</code></td><td>every connected Admin-role agent</td><td>live inbox updates (new/updated conversation) without opening a thread</td></tr>
+    </table>
+    <p>Same JWT-over-WebSocket trick as Notification's hub — browsers can't set an <code>Authorization</code> header on a WS handshake, so the token travels as <code>?access_token=</code> and gets pulled into <code>context.Token</code> via <code>JwtBearerEvents.OnMessageReceived</code>, scoped to <code>/hubs</code> paths in <code>Program.cs</code>.</p>
+  </section>
+
+  <section class="block" id="model">
+    <h2><span class="num">4</span> Domain model &amp; routes</h2>
+    <div class="code-block">
+      <div class="file">📄 src/Services/Chat/CommerceSphere.ChatService.Domain/Entities/{Conversation,ChatMessage}.cs</div>
+      <pre><code class="language-csharp">public class Conversation : BaseEntity
+{
+    public Guid CustomerId { get; private set; }
+    public string CustomerName { get; private set; } = string.Empty;   // denormalized, avoids a join to Auth
+    public string CustomerEmail { get; private set; } = string.Empty;
+    public DateTime? LastMessageAt { get; private set; }
+    public string? LastMessagePreview { get; private set; }
+    public bool UnreadForSupport { get; private set; }
+
+    private Conversation() { }
+    public static Conversation Start(Guid customerId, string customerName, string customerEmail) => new() { ... };
+    public void RecordActivity(string preview, DateTime at, bool unreadForSupport) { ... }
+}
+
+public class ChatMessage : BaseEntity   // immutable once created — no Edit/Delete
+{
+    public Guid ConversationId { get; private set; }
+    public Guid SenderId { get; private set; }
+    public string SenderRole { get; private set; } = string.Empty;   // "Customer" | "Support"
+    public string SenderName { get; private set; } = string.Empty;
+    public string Content { get; private set; } = string.Empty;
+    private ChatMessage() { }
+    public static ChatMessage Create(Guid conversationId, Guid senderId, string senderRole, string senderName, string content) => new() { ... };
+}</code></pre>
+    </div>
+    <table>
+      <tr><th>Route</th><th>Notes</th></tr>
+      <tr><td><code>POST /api/chat/conversations</code></td><td>customer starts/fetches their own thread (idempotent — lazy-creates on first call)</td></tr>
+      <tr><td><code>GET /api/chat/conversations</code></td><td>Admin only — agent inbox, sorted by <code>LastMessageAt</code></td></tr>
+      <tr><td><code>GET /api/chat/conversations/{id}/messages</code></td><td>message history, paged</td></tr>
+      <tr><td><code>POST /api/chat/conversations/{id}/messages</code></td><td>send — persists then pushes via <code>IChatNotifier</code></td></tr>
+    </table>
+    <p>Sender identity maps role via <code>ChatUserExtensions.ToChatUser()</code> — same JWT claims every other service reads, so Chat needs no direct dependency on Auth's database, only on the shared token format.</p>
+    <div class="callout note"><div class="callout-title">💡 RBAC tie-in</div>Auth's RBAC seed (<code>SeedRbacAsync</code>) provisions a dedicated <code>support-chat</code> admin menu entry — direct evidence this is a first-class, intentionally integrated feature and not leftover scaffolding. See the <a class="inline-link" href="auth.html#rbac">Auth page's RBAC section</a>.</div>
+  </section>
+
+  <section class="block" id="scaling">
+    <h2><span class="num">5</span> Scaling caveat</h2>
+    <div class="callout gap"><div class="callout-title">🕳️ No SignalR backplane configured</div>The hub runs with SignalR's default in-memory connection tracking — fine for a single <code>chat-service</code> replica, but if it's ever scaled to 2+ instances behind the gateway's round-robin load balancer, a customer connected to instance A and an agent connected to instance B would never receive each other's live pushes (Groups are per-instance in memory). Adding a Redis backplane (<code>AddStackExchangeRedis(...)</code> on the SignalR builder — the same Redis container already shared by every other service) would fix this before horizontally scaling Chat.</div>
+  </section>
+
+  <div class="page-footer-nav">
+    <a class="prev" href="notification.html"><div class="lbl">← Prev</div><div class="name">Notification Service</div></a>
+    <a class="next" href="shared.html"><div class="lbl">Next →</div><div class="name">Shared Libraries</div></a>
+  </div>
+
+  <footer class="site-footer">CommerceSphere internal architecture guide</footer>
+</div>
+
+<script src="../assets/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cart Service — CommerceSphere Architecture Guide</title>
+<link rel="stylesheet" href="../assets/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>:root{--accent:var(--cart);}</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="../index.html"><span class="logo">🧭</span> CommerceSphere Guide</a>
+    <nav class="topnav">
+      <a href="../index.html">Overview</a>
+      <a href="gateway.html">Gateway</a>
+      <a href="auth.html">Auth</a>
+      <a href="product.html">Product</a>
+      <a href="inventory.html">Inventory</a>
+      <a href="cart.html">Cart</a>
+      <a href="notification.html">Notification</a>
+      <a href="chat.html">Chat</a>
+      <a href="shared.html">Shared Libs</a>
+      <a href="docker.html">Dockerize</a>
+    </nav>
+    <div class="spacer"></div>
+    <button class="theme-toggle" id="theme-toggle">🌙 Dark</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="page-head">
+    <a class="back-link" href="../index.html">← Back to overview</a>
+    <div class="kicker"><span class="dot"></span> Domain service · Checkout saga orchestrator</div>
+    <h1>🛒 Cart Service</h1>
+    <p class="dek">The most business-logic-heavy service in the platform. Cart doubles as the order aggregate, orchestrates the checkout saga across Inventory, and is the only service with a full transactional outbox + relay — the textbook pattern for "never lose an event, never send it twice."</p>
+    <div class="meta-row">
+      <span class="badge" style="--accent:var(--cart)">src/Services/Cart</span>
+      <span class="badge" style="--accent:var(--cart)">Port 5236</span>
+      <span class="badge" style="--accent:var(--cart)">Postgres :5436</span>
+      <span class="badge" style="--accent:var(--cart)">Outbox + Relay</span>
+      <span class="badge" style="--accent:var(--cart)">Saga orchestrator</span>
+    </div>
+  </div>
+
+  <div class="toc">
+    <a href="#highlevel">High-level saga</a>
+    <a href="#checkout">Checkout initiation</a>
+    <a href="#outbox">Transactional outbox</a>
+    <a href="#saga-consumer">Saga consumer</a>
+    <a href="#compensation">Compensation</a>
+    <a href="#idempotency">Idempotency</a>
+    <a href="#model">Domain model</a>
+  </div>
+
+  <section class="block" id="highlevel">
+    <h2><span class="num">1</span> High-level: the checkout saga end-to-end</h2>
+    <p class="section-intro">There is no distributed transaction spanning Cart and Inventory — there's a saga: a sequence of local transactions, each publishing an event that triggers the next step, with an explicit compensating action if a later step fails.</p>
+    <div class="diagram">
+      <pre class="mermaid">
+sequenceDiagram
+    participant U as Client
+    participant Cart as Cart Service
+    participant OB as Outbox table
+    participant Relay as OutboxRelay
+    participant K as Kafka
+    participant Inv as Inventory Service
+
+    U->>Cart: POST /carts/{id}/checkout
+    Cart->>Cart: cart.Checkout() (Status=CheckedOut)
+    Cart->>OB: insert OutboxMessage(cart-checkedout)
+    Note over Cart,OB: cart.Checkout() + outbox row in ONE SaveChangesAsync
+    Cart-->>U: 200 OK (cart is CheckedOut)
+
+    loop every 2s
+        Relay->>OB: SELECT WHERE ProcessedAt IS NULL
+    end
+    Relay->>K: produce cart-checkedout
+    Relay->>OB: MarkProcessed()
+
+    K->>Inv: cart-checkedout
+    Inv->>Inv: reserve stock, sell, confirm reservation
+
+    alt reservation already handled elsewhere
+        Inv->>K: inventory-reserved
+        K->>Cart: InventorySagaConsumer (logs only — no state change)
+    else insufficient stock upstream
+        Inv->>K: inventory-reservation-failed
+        K->>Cart: InventorySagaConsumer
+        Cart->>Cart: RollbackAsync() -> Status=RolledBack
+        Cart->>K: CartRolledBackEvent (published directly, NOT via outbox)
+    end
+      </pre>
+    </div>
+    <div class="callout warn"><div class="callout-title">⚠️ Read this carefully</div>The <b>success</b> path (<code>inventory-reserved</code>) does not drive any Cart state change today — it's logged only. The order stays <code>CheckedOut</code> until an admin explicitly calls <code>ConfirmOrderAsync</code>/<code>ShipOrderAsync</code>. Only the <b>failure</b> path (<code>inventory-reservation-failed</code>) triggers real compensation logic.</div>
+  </section>
+
+  <section class="block" id="checkout">
+    <h2><span class="num">2</span> Checkout initiation</h2>
+    <div class="code-block">
+      <div class="file">📄 src/Services/Cart/CommerceSphere.CartService.Application/Managers/CartManager.cs</div>
+      <pre><code class="language-csharp">public async Task&lt;CartResponse&gt; CheckoutAsync(CheckoutCartRequest request, string correlationId, CancellationToken ct = default)
+{
+    var cart = await uow.Carts.GetByIdAsync(request.CartId, ct)
+        ?? throw new NotFoundException(nameof(Cart), request.CartId);
+
+    if (cart.Status != CartStatus.Active) throw new BusinessException($"Cart {request.CartId} is not Active.");
+    if (!cart.Items.Any()) throw new BusinessException("Cannot checkout an empty cart.");
+
+    cart.Checkout();   // marks CheckedOut so it can't be mutated while the saga runs
+
+    var snapshots = cart.Items.Select(i =>
+        new CartItemSnapshot(i.ProductId, i.Sku, i.ProductName, i.Quantity, i.UnitPrice)).ToList();
+
+    var checkedOutEvent = new CartCheckedOutEvent(cart.Id, cart.UserId, cart.TotalAmount, snapshots, correlationId, DateTime.UtcNow);
+    await uow.Outbox.AddAsync(OutboxMessage.Create(
+        CartCheckedOutTopic, cart.Id.ToString(), JsonSerializer.Serialize(checkedOutEvent), "CartCheckedOut", correlationId), ct);
+
+    await uow.SaveChangesAsync(ct);   // cart.Checkout() + outbox insert -> ONE atomic write
+    await cacheService.RemoveCartAsync(cart.Id);
+    return MapToResponse(cart);
+}</code></pre>
+    </div>
+    <p>Item quantities/prices are <b>snapshotted</b> into the event because the live cart could be mutated or deleted before Inventory ever processes the message — the saga needs a frozen picture of what was actually ordered.</p>
+  </section>
+
+  <section class="block" id="outbox">
+    <h2><span class="num">3</span> Transactional outbox — never lose an event</h2>
+    <p class="section-intro">The dual-write problem: "update the DB" and "publish to Kafka" can't be one atomic operation across two different systems. The outbox pattern turns it into <i>one</i> local DB transaction (state change + an outbox row) plus a separate relay that guarantees at-least-once delivery to Kafka.</p>
+    <div class="code-block">
+      <div class="file">📄 src/Services/Cart/CommerceSphere.CartService.Domain/Entities/OutboxMessage.cs</div>
+      <pre><code class="language-csharp">public class OutboxMessage
+{
+    public string Topic { get; private set; } = string.Empty;
+    public string Payload { get; private set; } = string.Empty;   // JSON of the event
+    public DateTime? ProcessedAt { get; private set; }            // null = still pending
+    public int Attempts { get; private set; }
+
+    public static OutboxMessage Create(string topic, string key, string payload, string eventType, string correlationId) => new() { ... };
+    public void MarkProcessed() => ProcessedAt = DateTime.UtcNow;
+    public void RecordFailedAttempt() => Attempts++;
+}</code></pre>
+    </div>
+    <div class="diagram">
+      <pre class="mermaid">
+flowchart LR
+    subgraph TX["Single DB transaction (one SaveChangesAsync)"]
+      A["cart.Checkout()<br/>Status -> CheckedOut"] --> B["INSERT OutboxMessage<br/>ProcessedAt = NULL"]
+    end
+    B --> C["OutboxRelay<br/>polls every 2s"]
+    C -->|"produce"| K[("Kafka")]
+    C -->|"on success"| D["MarkProcessed()"]
+    C -->|"on produce error"| E["RecordFailedAttempt()<br/>row stays pending, retried next poll"]
+      </pre>
+    </div>
+    <div class="code-block">
+      <div class="file">📄 src/Services/Cart/CommerceSphere.CartService.Infrastructure/Kafka/OutboxRelay.cs</div>
+      <pre><code class="language-csharp">private const int BatchSize = 20;
+private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(2);
+
+protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+{
+    var producerConfig = new ProducerConfig
+    {
+        BootstrapServers = config["Kafka:BootstrapServers"] ?? "localhost:9092",
+        EnableIdempotence = true,
+        Acks = Acks.All,
+    };
+    using var producer = new ProducerBuilder&lt;string, string&gt;(producerConfig).Build();
+
+    while (!stoppingToken.IsCancellationRequested)
+    {
+        try { await PublishPendingAsync(producer, stoppingToken); }
+        catch (Exception ex) { logger.LogError(ex, "OutboxRelay loop error."); }
+        await Task.Delay(PollInterval, stoppingToken);
+    }
+}
+
+private async Task PublishPendingAsync(IProducer&lt;string, string&gt; producer, CancellationToken ct)
+{
+    using var scope = scopeFactory.CreateScope();
+    var uow = scope.ServiceProvider.GetRequiredService&lt;IUnitOfWork&gt;();
+    var pending = await uow.Outbox.GetUnprocessedAsync(BatchSize, ct);   // WHERE ProcessedAt IS NULL
+    if (pending.Count == 0) return;
+
+    foreach (var msg in pending)
+    {
+        try { await producer.ProduceAsync(msg.Topic, new Message&lt;string,string&gt; { Key = msg.Key, Value = msg.Payload }, ct); msg.MarkProcessed(); }
+        catch (Exception) { msg.RecordFailedAttempt(); }   // left unprocessed, retried next poll
+    }
+    await uow.SaveChangesAsync(ct);   // persists the whole batch's outcome at once
+}</code></pre>
+    </div>
+    <div class="callout note"><div class="callout-title">💡 At-least-once, not exactly-once</div>If the process crashes after <code>producer.ProduceAsync</code> succeeds but before <code>SaveChangesAsync</code> marks it processed, the same message gets republished on the next poll. Downstream consumers are expected to dedupe by business key — which is exactly what Inventory's <code>CartCheckedOutConsumer</code> does by checking <code>Reservations.AnyAsync(r => r.CartId == evt.CartId)</code> before acting.</div>
+  </section>
+
+  <section class="block" id="saga-consumer">
+    <h2><span class="num">4</span> The saga consumer — one subscriber, two topics</h2>
+    <div class="code-block">
+      <div class="file">📄 src/Services/Cart/CommerceSphere.CartService.Infrastructure/Kafka/Consumers/InventorySagaConsumer.cs</div>
+      <pre><code class="language-csharp">consumer.Subscribe([InventoryReservedTopic, InventoryReservationFailedTopic]);
+while (!stoppingToken.IsCancellationRequested)
+{
+    var result = consumer.Consume(stoppingToken);
+    if (result is null) continue;
+    await ProcessWithRetryAsync(result, stoppingToken);   // 3 attempts, 2s/4s/8s backoff
+    consumer.Commit(result);   // offset advances only after processing (or DLQ) completes
+}
+
+// Dispatch:
+if (result.Topic == InventoryReservationFailedTopic)
+{
+    var @event = JsonSerializer.Deserialize&lt;InventoryReservationFailedEvent&gt;(result.Message.Value)!;
+
+    // Dedup guard — without this, a redelivered failure event (e.g. crash between processing
+    // and committing the Kafka offset) would call RollbackAsync again even if the cart had
+    // already moved on to a different terminal state.
+    if (!await idempotencyService.TryMarkProcessedAsync($"saga:reservation-failed:{@event.CartId}", TimeSpan.FromDays(7), ct))
+        return;   // already handled — skip
+
+    await cartManager.RollbackAsync(@event.CartId, @event.Reason, ct);
+}
+else // InventoryReservedTopic
+{
+    var @event = JsonSerializer.Deserialize&lt;InventoryReservedEvent&gt;(result.Message.Value)!;
+
+    if (!await idempotencyService.TryMarkProcessedAsync($"saga:reserved:{@event.CartId}", TimeSpan.FromDays(7), ct))
+        return;
+
+    logger.LogInformation("Saga step 2 complete: inventory reserved for CartId={CartId}", @event.CartId);
+}</code></pre>
+    </div>
+    <p>On retry exhaustion the poison message is forwarded to <code>dlq.cart-checkedout</code> with <code>original-topic</code>/<code>error</code>/<code>failed-at</code> headers, and the offset is still committed so one bad message can't stall the whole partition.</p>
+    <div class="callout ok"><div class="callout-title">✅ Fixed</div>This was previously the one Kafka consumer in the whole platform with <b>zero</b> dedup guard — redelivery was only implicitly softened by domain-level null/status checks, not an explicit dedupe key. Verified live: publishing the exact same <code>InventoryReservedEvent</code> twice logs <code>"Saga step 2 complete"</code> once, then <code>"Reserved event for cart {'{'}CartId{'}'} already handled. Skipping."</code> for the redelivery.</div>
+  </section>
+
+  <section class="block" id="compensation">
+    <h2><span class="num">5</span> Compensation — RollbackAsync</h2>
+    <div class="code-block">
+      <div class="file">📄 CartManager.cs</div>
+      <pre><code class="language-csharp">public async Task RollbackAsync(Guid cartId, string reason, CancellationToken ct = default)
+{
+    var cart = await uow.Carts.GetByIdAsync(cartId, ct);
+    if (cart is null) { logger.LogWarning("Rollback requested for unknown cart {CartId}", cartId); return; }
+
+    cart.Rollback(reason);                     // Status -> RolledBack, appends an OrderStatusEntry
+    await uow.SaveChangesAsync(ct);
+
+    await eventProducer.PublishCartRolledBackAsync(new CartRolledBackEvent(
+        cart.Id, cart.UserId, reason, string.Empty, DateTime.UtcNow));   // published DIRECTLY — not via outbox
+
+    await cacheService.RemoveCartAsync(cart.Id);
+}</code></pre>
+    </div>
+    <div class="callout gap"><div class="callout-title">🕳️ Asymmetry to flag</div><code>Checkout</code> and <code>Cancel</code> write their events through the transactional outbox. <code>RollbackAsync</code> publishes <code>CartRolledBackEvent</code> <b>directly</b> through the Kafka producer instead — this specific event can be silently lost if Kafka happens to be unreachable at that exact instant, unlike checkout/cancel events which are durable in the outbox table until delivered.</div>
+  </section>
+
+  <section class="block" id="idempotency">
+    <h2><span class="num">6</span> Idempotency — two mechanisms, both wired up now</h2>
+    <p class="section-intro"><b>(a) DB-based, for cart creation.</b> A Postgres unique partial index backs client-supplied idempotency keys:</p>
+    <div class="code-block">
+      <pre><code class="language-csharp">if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))
+{
+    var existing = await uow.Carts.GetByIdempotencyKeyAsync(request.IdempotencyKey, ct);
+    if (existing is not null) return MapToResponse(existing);   // replay -> same cart, no duplicate
+}
+var cart = Cart.Create(request.UserId, request.IdempotencyKey);</code></pre>
+    </div>
+    <div class="code-block">
+      <pre><code class="language-csharp">builder.HasIndex(c => c.IdempotencyKey).IsUnique()
+    .HasDatabaseName("ix_carts_idempotency_key").HasFilter("idempotency_key IS NOT NULL");</code></pre>
+    </div>
+    <p><b>(b) Redis <code>IIdempotencyService</code>, in <code>CheckoutAsync</code>.</b> Previously injected into <code>CartManager</code> and never called — checkout was only guarded by the <code>Status != Active</code> check, which two concurrent checkout calls for the same cart could both pass before either saved. Now the checkout claims the cart up front:</p>
+    <div class="code-block">
+      <div class="file">📄 CartManager.cs — CheckoutAsync</div>
+      <pre><code class="language-csharp">// Short TTL: enough to cover one request's processing time, not meant to survive into a
+// genuinely separate later checkout attempt.
+if (!await idempotencyService.TryMarkProcessedAsync($"checkout:{request.CartId}", TimeSpan.FromMinutes(1), ct))
+    throw new BusinessException($"Cart {request.CartId} checkout is already being processed.");</code></pre>
+    </div>
+    <div class="callout ok">
+      <div class="callout-title">✅ Fixed, verified live</div>
+      Firing two concurrent <code>POST /carts/{'{'}cartId{'}'}/checkout</code> calls for the same cart now returns one <code>200</code> and one clean <code>422 "checkout is already being processed"</code>, instead of racing. <code>InventorySagaConsumer</code> got the same treatment — see <a class="inline-link" href="#saga-consumer">§4</a> above — so both the initiation side and the compensation side of the saga now dedupe explicitly, matching Inventory's <code>ReserveAsync</code> pattern.
+    </div>
+  </section>
+
+  <section class="block" id="model">
+    <h2><span class="num">7</span> Domain model — Cart doubles as the order aggregate</h2>
+    <p>There is <b>no separate <code>Order</code> entity</b>. <code>Cart</code> itself carries the full lifecycle via <code>CartStatus</code>: <code>Active → CheckedOut → Confirmed → Shipped</code>, plus <code>Abandoned</code> / <code>RolledBack</code> / <code>Cancelled</code>. "Orders" are just carts filtered by status in the repository layer.</p>
+    <div class="diagram">
+      <pre class="mermaid">
+stateDiagram-v2
+    [*] --> Active
+    Active --> CheckedOut: Checkout()
+    CheckedOut --> Confirmed: ConfirmOrderAsync (admin)
+    Confirmed --> Shipped: ShipOrderAsync (admin)
+    CheckedOut --> RolledBack: RollbackAsync (saga compensation)
+    Active --> Abandoned: inactivity
+    CheckedOut --> Cancelled: cancel (admin or customer)
+    Confirmed --> Cancelled: cancel (admin or customer)
+      </pre>
+    </div>
+    <table>
+      <tr><th>Route</th><th>Notes</th></tr>
+      <tr><td><code>POST /api/carts</code></td><td>reads <code>X-Idempotency-Key</code> header</td></tr>
+      <tr><td><code>POST /api/carts/{cartId}/checkout</code></td><td>kicks off the saga</td></tr>
+      <tr><td><code>GET /api/carts/orders</code></td><td>Admin only — registered before <code>{cartId:guid}</code> to avoid route ambiguity</td></tr>
+      <tr><td><code>POST /api/carts/orders/{cartId}/confirm</code> / <code>/ship</code> / <code>/cancel</code></td><td>Admin only</td></tr>
+      <tr><td><code>POST /api/carts/my-orders/{cartId}/cancel</code></td><td>Customer cancels own order, ownership enforced against JWT <code>sub</code></td></tr>
+    </table>
+  </section>
+
+  <div class="page-footer-nav">
+    <a class="prev" href="inventory.html"><div class="lbl">← Prev</div><div class="name">Inventory Service</div></a>
+    <a class="next" href="notification.html"><div class="lbl">Next →</div><div class="name">Notification Service</div></a>
+  </div>
+
+  <footer class="site-footer">CommerceSphere internal architecture guide</footer>
+</div>
+
+<script src="../assets/main.js"></script>
+</body>
+</html>

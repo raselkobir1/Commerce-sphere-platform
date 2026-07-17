@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CommerceSphere — Architecture Guide</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="index.html"><span class="logo">🧭</span> CommerceSphere Guide</a>
+    <nav class="topnav">
+      <a href="index.html">Overview</a>
+      <a href="pages/gateway.html">Gateway</a>
+      <a href="pages/auth.html">Auth</a>
+      <a href="pages/product.html">Product</a>
+      <a href="pages/inventory.html">Inventory</a>
+      <a href="pages/cart.html">Cart</a>
+      <a href="pages/notification.html">Notification</a>
+      <a href="pages/chat.html">Chat</a>
+      <a href="pages/shared.html">Shared Libs</a>
+      <a href="pages/docker.html">Dockerize</a>
+    </nav>
+    <div class="spacer"></div>
+    <button class="theme-toggle" id="theme-toggle">🌙 Dark</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="hero">
+    <span class="eyebrow">📚 Study Hub · Event-driven .NET 8 microservices</span>
+    <h1>CommerceSphere — Architecture &amp; Communication Guide</h1>
+    <p class="lead">
+      A service-by-service field guide to how the API Gateway, every domain service, Redis, and Kafka
+      actually talk to each other in this repo — high-level flows, low-level sequence diagrams,
+      and the real code behind the checkout saga, the transactional outbox, idempotency, and every
+      other piece of business logic that goes beyond plain CRUD.
+    </p>
+
+    <div class="profile-card">
+      <div class="avatar">🛠️</div>
+      <div class="who">
+        <b>Rasel Kabir</b>
+        <div class="role">Backend-focused full-stack developer · <a class="inline-link" href="mailto:md.rasel@technonext.com">md.rasel@technonext.com</a></div>
+      </div>
+      <div class="stack-line">
+        <span class="badge" style="--accent:var(--gateway)">YARP</span>
+        <span class="badge" style="--accent:var(--auth)">.NET 8</span>
+        <span class="badge" style="--accent:var(--product)">Kafka</span>
+        <span class="badge" style="--accent:var(--inventory)">Postgres</span>
+        <span class="badge" style="--accent:var(--cart)">Redis</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label">Entry point</div>
+  <div class="grid">
+    <a class="card" href="pages/gateway.html" style="--accent:var(--gateway)">
+      <span class="status-ready">Ready</span>
+      <span class="icon">🚪</span>
+      <h3>API Gateway (YARP)</h3>
+      <p>Single ingress for every client. Path-based routing to internal DNS names, JWT validation, fixed-window rate limiting, correlation-ID propagation, active health checks.</p>
+      <div class="tags"><span class="badge" style="--accent:var(--gateway)">Reverse proxy</span><span class="badge" style="--accent:var(--gateway)">Port 5000</span></div>
+      <span class="open">Open guide →</span>
+    </a>
+  </div>
+
+  <div class="section-label">Domain services</div>
+  <div class="grid">
+    <a class="card" href="pages/auth.html" style="--accent:var(--auth)">
+      <span class="status-ready">Ready</span>
+      <span class="icon">🔐</span>
+      <h3>Auth Service</h3>
+      <p>JWT + opaque refresh-token rotation, lockout/2FA/OTP login state machine, RBAC, SSO. Produces <code>user-created</code>, consumes <code>cart-cancelled</code> for compensating emails.</p>
+      <div class="tags"><span class="badge" style="--accent:var(--auth)">Producer</span><span class="badge" style="--accent:var(--auth)">Consumer</span><span class="badge" style="--accent:var(--auth)">Redis</span></div>
+      <span class="open">Open guide →</span>
+    </a>
+    <a class="card" href="pages/product.html" style="--accent:var(--product)">
+      <span class="status-ready">Ready</span>
+      <span class="icon">🏷️</span>
+      <h3>Product Service</h3>
+      <p>Catalog CRUD plus a signed, hand-rolled Cloudinary upload pipeline, a queued bulk-Excel importer (ClosedXML + Postgres binary COPY), and a read-through Redis cache.</p>
+      <div class="tags"><span class="badge" style="--accent:var(--product)">Producer</span><span class="badge" style="--accent:var(--product)">Cloudinary</span><span class="badge" style="--accent:var(--product)">Bulk import</span><span class="badge" style="--accent:var(--product)">Cache</span></div>
+      <span class="open">Open guide →</span>
+    </a>
+    <a class="card" href="pages/inventory.html" style="--accent:var(--inventory)">
+      <span class="status-ready">Ready</span>
+      <span class="icon">📦</span>
+      <h3>Inventory Service</h3>
+      <p>Synchronous stock reservation API with Redis idempotency keys and a Redis distributed lock around every stock mutation, plus three Kafka consumers/producers driving the checkout saga's success and compensation paths.</p>
+      <div class="tags"><span class="badge" style="--accent:var(--inventory)">Consumer</span><span class="badge" style="--accent:var(--inventory)">Producer</span><span class="badge" style="--accent:var(--inventory)">Saga</span><span class="badge" style="--accent:var(--inventory)">Distributed lock</span></div>
+      <span class="open">Open guide →</span>
+    </a>
+    <a class="card" href="pages/cart.html" style="--accent:var(--cart)">
+      <span class="status-ready">Ready</span>
+      <span class="icon">🛒</span>
+      <h3>Cart Service</h3>
+      <p>The heart of the platform: checkout saga orchestration, a transactional outbox + relay, and compensation logic. The most complex business flow in the repo.</p>
+      <div class="tags"><span class="badge" style="--accent:var(--cart)">Outbox</span><span class="badge" style="--accent:var(--cart)">Saga</span><span class="badge" style="--accent:var(--cart)">Compensation</span></div>
+      <span class="open">Open guide →</span>
+    </a>
+    <a class="card" href="pages/notification.html" style="--accent:var(--notification)">
+      <span class="status-ready">Ready</span>
+      <span class="icon">🔔</span>
+      <h3>Notification Service</h3>
+      <p>Manual-commit Kafka consumer, inbox-table idempotency, dead-letter queue, SignalR live push to admins, and transactional customer emails.</p>
+      <div class="tags"><span class="badge" style="--accent:var(--notification)">Inbox</span><span class="badge" style="--accent:var(--notification)">DLQ</span><span class="badge" style="--accent:var(--notification)">SignalR</span></div>
+      <span class="open">Open guide →</span>
+    </a>
+    <a class="card" href="pages/chat.html" style="--accent:var(--chat)">
+      <span class="status-ready">Ready</span>
+      <span class="icon">💬</span>
+      <h3>Chat Service</h3>
+      <p>Live one-to-one support chat, persisted via REST then pushed over SignalR. No Kafka — easy to miss, but fully wired into the gateway and docker-compose.</p>
+      <div class="tags"><span class="badge" style="--accent:var(--chat)">SignalR</span><span class="badge" style="--accent:var(--chat)">No Kafka</span></div>
+      <span class="open">Open guide →</span>
+    </a>
+  </div>
+
+  <div class="section-label">Foundations</div>
+  <div class="grid">
+    <a class="card" href="pages/shared.html" style="--accent:var(--shared)">
+      <span class="status-ready">Ready</span>
+      <span class="icon">🧩</span>
+      <h3>Shared Libraries</h3>
+      <p><code>ApiResponse&lt;T&gt;</code>, the exception → HTTP-status map, the shared atomic Redis idempotency service, a Redis distributed lock (SETNX + safe release), Polly retry policies, and every Kafka event contract.</p>
+      <div class="tags"><span class="badge" style="--accent:var(--shared)">Contracts</span><span class="badge" style="--accent:var(--shared)">Resilience</span></div>
+      <span class="open">Open guide →</span>
+    </a>
+    <a class="card" href="pages/docker.html" style="--accent:var(--docker)">
+      <span class="status-ready">Ready</span>
+      <span class="icon">🐳</span>
+      <h3>Dockerizing the Whole Stack</h3>
+      <p>Multi-stage Dockerfiles, one Postgres per service, the base/override/prod compose layering, env-file secrets, and the exact commands to run dev vs. production.</p>
+      <div class="tags"><span class="badge" style="--accent:var(--docker)">Compose</span><span class="badge" style="--accent:var(--docker)">Multi-stage</span></div>
+      <span class="open">Open guide →</span>
+    </a>
+  </div>
+
+  <footer class="site-footer">
+    CommerceSphere internal architecture guide · generated from the actual source in this repo · more services will be added as they ship
+  </footer>
+
+</div>
+
+<script src="assets/main.js"></script>
+</body>
+</html>

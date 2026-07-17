@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Auth Service — CommerceSphere Architecture Guide</title>
+<link rel="stylesheet" href="../assets/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>:root{--accent:var(--auth);}</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="../index.html"><span class="logo">🧭</span> CommerceSphere Guide</a>
+    <nav class="topnav">
+      <a href="../index.html">Overview</a>
+      <a href="gateway.html">Gateway</a>
+      <a href="auth.html">Auth</a>
+      <a href="product.html">Product</a>
+      <a href="inventory.html">Inventory</a>
+      <a href="cart.html">Cart</a>
+      <a href="notification.html">Notification</a>
+      <a href="chat.html">Chat</a>
+      <a href="shared.html">Shared Libs</a>
+      <a href="docker.html">Dockerize</a>
+    </nav>
+    <div class="spacer"></div>
+    <button class="theme-toggle" id="theme-toggle">🌙 Dark</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="page-head">
+    <a class="back-link" href="../index.html">← Back to overview</a>
+    <div class="kicker"><span class="dot"></span> Domain service · Identity &amp; access</div>
+    <h1>🔐 Auth Service</h1>
+    <p class="dek">Owns every user identity in the platform: JWT + rotating refresh tokens, a real login state machine (lockout → forced password change → 2FA → OTP), RBAC, SSO, and the sole producer of <code>user-created</code>. Also the one place customer-facing cancellation emails get sent from.</p>
+    <div class="meta-row">
+      <span class="badge" style="--accent:var(--auth)">src/Services/Auth</span>
+      <span class="badge" style="--accent:var(--auth)">Port 5211 / 7044</span>
+      <span class="badge" style="--accent:var(--auth)">Postgres :5433</span>
+      <span class="badge" style="--accent:var(--auth)">Produces user-created</span>
+      <span class="badge" style="--accent:var(--auth)">Consumes cart-cancelled</span>
+      <span class="badge" style="--accent:var(--auth)">RBAC · SSO · 2FA · OTP</span>
+    </div>
+  </div>
+
+  <div class="toc">
+    <a href="#highlevel">High-level</a>
+    <a href="#jwt">JWT issuance</a>
+    <a href="#refresh">Refresh token rotation</a>
+    <a href="#login">Login state machine</a>
+    <a href="#kafka">Kafka</a>
+    <a href="#redis">Redis</a>
+    <a href="#rbac">RBAC</a>
+    <a href="#security">SSO · 2FA · OTP · reset</a>
+    <a href="#entities">Domain model</a>
+  </div>
+
+  <section class="block" id="highlevel">
+    <h2><span class="num">1</span> High-level: identity as the source of truth</h2>
+    <p class="section-intro">Auth is the only service allowed to mint tokens and the only owner of email addresses. Everything else — Cart, Inventory, Notification — trusts the JWT it issues and reacts to the one event it publishes.</p>
+    <div class="diagram">
+      <pre class="mermaid">
+flowchart LR
+    U["👤 User"] -->|"register / login"| AUTH["🔐 Auth Service"]
+    AUTH -->|"JWT access + refresh token"| U
+    AUTH -->|"user-created"| K[("Kafka")]
+    K --> NOTIF["🔔 Notification<br/>(builds contact read-model)"]
+    CART["🛒 Cart Service"] -->|"cart-cancelled"| K
+    K --> AUTH
+    AUTH -->|"customer cancellation email"| MAIL["📧 SMTP"]
+      </pre>
+    </div>
+  </section>
+
+  <section class="block" id="jwt">
+    <h2><span class="num">2</span> JWT issuance — access token vs. refresh token</h2>
+    <p class="section-intro">Only the <b>access token</b> is a JWT. The <b>refresh token</b> is a 32-byte CSPRNG opaque string stored in Postgres — never anything a client can decode.</p>
+    <div class="code-block">
+      <div class="file">📄 src/Services/Auth/CommerceSphere.AuthService.Infrastructure/Services/JwtService.cs</div>
+      <pre><code class="language-csharp">public string GenerateAccessToken(User user, IEnumerable&lt;string&gt; permissions)
+{
+    var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_secret));
+    var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+    var claims = new List&lt;Claim&gt; { sub, email, ClaimTypes.Role, firstName, lastName, jti, iat };
+    foreach (var permission in permissions)
+        claims.Add(new Claim(PermissionClaims.Type, permission));   // RBAC grants baked into the token
+    // ... build JwtSecurityToken(issuer, audience, claims, expires: GetAccessTokenExpiry(), creds)
+}</code></pre>
+    </div>
+    <p>Validation side pins the algorithm explicitly (anti alg-confusion attacks) and disables the default 5-minute clock-skew grace:</p>
+    <div class="code-block">
+      <div class="file">📄 src/Services/Auth/CommerceSphere.AuthService.API/Program.cs</div>
+      <pre><code class="language-csharp">opts.TokenValidationParameters = new TokenValidationParameters
+{
+    ValidAlgorithms = new[] { SecurityAlgorithms.HmacSha256 },
+    ValidateIssuer = true, ValidateAudience = true, ValidateLifetime = true,
+    ClockSkew = TimeSpan.Zero
+};</code></pre>
+    </div>
+  </section>
+
+  <section class="block" id="refresh">
+    <h2><span class="num">3</span> Refresh token rotation</h2>
+    <div class="code-block">
+      <div class="file">📄 src/Services/Auth/CommerceSphere.AuthService.Domain/Entities/RefreshToken.cs</div>
+      <pre><code class="language-csharp">public class RefreshToken : BaseEntity
+{
+    public string Token { get; private set; }
+    public bool IsRevoked { get; private set; }
+    public string? ReplacedByToken { get; private set; }   // chain link for rotation
+    public bool IsExpired => DateTime.UtcNow >= ExpiresAt;
+    public bool IsActive => !IsRevoked && !IsExpired;
+
+    public static RefreshToken Create(Guid userId, string createdByIp, int expiryDays = 7) =>
+        new() { Token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)), ... };
+}</code></pre>
+    </div>
+    <ol class="steps">
+      <li><b>Client calls <code>/refresh-token</code></b><span class="sub">Lookup by token value; reject if <code>!IsActive</code> (revoked or expired).</span></li>
+      <li><b>Deactivated-user check</b><span class="sub">If the owning user has been deactivated, revoke and reject.</span></li>
+      <li><b>Mint + link</b><span class="sub">A new <code>RefreshToken</code> is created; the old one calls <code>Revoke(newToken)</code>, storing <code>ReplacedByToken</code> as a chain pointer.</span></li>
+      <li><b>Both saved</b><span class="sub">Old token marked revoked, new token active — same DB transaction.</span></li>
+    </ol>
+    <div class="callout gap">
+      <div class="callout-title">🕳️ Gap worth knowing about</div>
+      There is no reuse-detection cascade. The standard "stolen refresh token" mitigation walks the <code>ReplacedByToken</code> chain and revokes the <em>entire</em> token family the moment an already-rotated token is replayed. Here, a replayed token is simply rejected (<code>IsActive == false</code>) — the rest of that user's active tokens stay valid. <code>RefreshTokenRepository.RevokeAllForUserAsync</code> exists and is used for admin-triggered password resets, but it isn't wired into this replay path.
+    </div>
+  </section>
+
+  <section class="block" id="login">
+    <h2><span class="num">4</span> Login isn't one step — it's a state machine</h2>
+    <p class="section-intro">Order matters: lockout → active check → password → forced password change → 2FA → OTP → tokens. Each intermediate stop returns a <code>ChallengeToken</code> instead of real tokens, and a <code>LoginResult</code> union drives what the controller sends back.</p>
+    <div class="diagram">
+      <pre class="mermaid">
+flowchart TD
+    A["POST /login"] --> B{"Locked out?<br/>(5 failed attempts)"}
+    B -->|yes| R1["403 — locked 15 min"]
+    B -->|no| C{"Account active?"}
+    C -->|no| R2["403"]
+    C -->|yes| D{"Password valid?<br/>(BCrypt.Verify)"}
+    D -->|no| E["RecordFailedLogin()"] --> R3["401"]
+    D -->|yes| F{"Must change<br/>temp password?"}
+    F -->|yes| R4["ChallengeToken:<br/>LoginNeedsPasswordChange"]
+    F -->|no| G{"2FA enabled?"}
+    G -->|yes| R5["ChallengeToken:<br/>LoginNeedsTwoFactor"]
+    G -->|no| H{"OTP enabled?"}
+    H -->|yes| R6["ChallengeToken:<br/>LoginNeedsOtp"]
+    H -->|no| I["✅ LoginSucceeded<br/>access + refresh token"]
+      </pre>
+    </div>
+    <p>Lockout state lives directly on the <code>User</code> entity (<code>RecordFailedLogin</code> / <code>IsLockedOut</code>) — 5 failed attempts trigger a 15-minute lockout window, no external service needed. Passwords are hashed with <b>BCrypt</b> (aliased <code>BC</code>), and registration <b>forces</b> <code>role: "Customer"</code> server-side regardless of what the client sends, explicitly closing a privilege-escalation path.</p>
+  </section>
+
+  <section class="block" id="kafka">
+    <h2><span class="num">5</span> Kafka — produces <code>user-created</code>, consumes <code>cart-cancelled</code></h2>
+    <div class="code-block">
+      <div class="file">📄 src/Services/Auth/CommerceSphere.AuthService.Infrastructure/Kafka/Producers/UserEventProducer.cs</div>
+      <pre><code class="language-csharp">public async Task PublishUserCreatedAsync(UserCreatedEvent evt, CancellationToken ct = default)
+{
+    var policy = ResiliencePolicies.KafkaRetryPolicy(logger);   // 5 retries, exponential backoff
+    await policy.ExecuteAsync(async () =>
+    {
+        var message = new Message&lt;string, string&gt;
+        {
+            Key = evt.UserId.ToString(),   // partition key -> per-user ordering
+            Value = JsonSerializer.Serialize(evt),
+            Headers = new Headers { /* event-type, version, correlation-id */ }
+        };
+        await _producer.ProduceAsync("user-created", message, ct);
+    });
+}</code></pre>
+    </div>
+    <p>Called straight from <code>AuthManager.RegisterAsync</code> after <code>SaveChangesAsync</code> — commit-then-produce, same trade-off as Product's producer (see the <a class="inline-link" href="product.html#kafka">Product page</a>).</p>
+    <p>The consumer side reacts to order cancellations by emailing the customer — Auth owns the email address, Cart/Notification don't:</p>
+    <div class="code-block">
+      <div class="file">📄 src/Services/Auth/CommerceSphere.AuthService.Infrastructure/Kafka/Consumers/CartCancelledConsumer.cs</div>
+      <pre><code class="language-csharp">var guardKey = $"email:order-cancelled:{evt.CartId}";
+if (!await redisDb.StringSetAsync(guardKey, "1", TimeSpan.FromDays(7), When.NotExists))
+{
+    logger.LogInformation("Cancellation email for {CartId} already sent. Skipping.", evt.CartId);
+    return;
+}
+try { /* load user, send SendOrderCancelledAsync */ }
+catch { await redisDb.KeyDeleteAsync(guardKey); throw; }   // undo the guard so a retry can resend</code></pre>
+    </div>
+    <p>Topic <code>cart-cancelled</code>, consumer group <code>auth-cancel-email-consumer</code>, manual commit, 3 retries → <code>dlq.cart-cancelled</code>.</p>
+  </section>
+
+  <section class="block" id="redis">
+    <h2><span class="num">6</span> Redis usage</h2>
+    <div class="kv-grid">
+      <div class="kv"><div class="k">Idempotency service</div><div class="v"><code>idempotency:*</code>, 24h TTL</div></div>
+      <div class="kv"><div class="k">Email dedupe guard</div><div class="v"><code>email:order-cancelled:*</code>, 7d TTL</div></div>
+      <div class="kv"><div class="k">SSO state</div><div class="v">OAuth callback state, short-lived</div></div>
+    </div>
+  </section>
+
+  <section class="block" id="rbac">
+    <h2><span class="num">7</span> RBAC — Role → Menu → Permission, baked into the JWT</h2>
+    <p class="section-intro">A <code>Menu</code> is not just a sidebar item — it's the securable <b>resource</b> the whole permission system is scoped to. Each menu doubles as a nav entry (<code>Label</code>/<code>Route</code>/<code>Icon</code>, optional <code>ParentId</code> for a tree) and as the unit permissions are granted against.</p>
+    <div class="diagram">
+      <pre class="mermaid">
+erDiagram
+    ROLE ||--o{ ROLE_MENU_PERMISSION : grants
+    MENU ||--o{ ROLE_MENU_PERMISSION : "scoped to"
+    ROLE {
+      bool IsSystem
+      bool IsDefault
+    }
+    MENU {
+      string Key "e.g. products"
+      string Label
+      string Route
+      guid ParentId "nullable, tree"
+    }
+    ROLE_MENU_PERMISSION {
+      bool CanView
+      bool CanCreate
+      bool CanEdit
+      bool CanDelete
+    }
+      </pre>
+    </div>
+    <p>One <code>RoleMenuPermission</code> row per <code>(RoleId, MenuId)</code> pair carries a 4-flag CRUD matrix — not one row per action. At login, <code>RolePermissionClaims.Build()</code> flattens every granted flag into a <code>"{menuKey}:{action}"</code> claim string (e.g. <code>"products:create"</code>) and bakes the whole set into the JWT under claim type <code>"perm"</code> — the permission set is <b>not</b> re-queried from the database on every request.</p>
+    <div class="code-block">
+      <div class="file">📄 src/Shared/CommerceSphere.Shared.Common/Common/Authorization/PermissionAuthorizationHandler.cs</div>
+      <pre><code class="language-csharp">protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, PermissionRequirement requirement)
+{
+    if (context.User.IsInRole("Admin")) { context.Succeed(requirement); return Task.CompletedTask; }   // Admin bypass — can't lock itself out
+
+    var granted = context.User.Claims.Any(c =>
+        c.Type == PermissionClaims.Type &&
+        string.Equals(c.Value, requirement.Permission, StringComparison.OrdinalIgnoreCase));
+    if (granted) context.Succeed(requirement);
+    return Task.CompletedTask;
+}
+
+// [HasPermission("products:create")] -> AuthorizeAttribute(policy: "perm:products:create")
+// PermissionPolicyProvider builds this policy on the fly for any "perm:" prefixed name —
+// no need to pre-register one named policy per permission in the whole platform.</code></pre>
+    </div>
+    <p>This lives in <code>Shared.Common</code> and is used identically by Auth, Product (<code>ProductController</code>, <code>CategoryController</code>, <code>BannerController</code>, <code>ProductImportController</code>), and Inventory (<code>InventoryController</code>) — a pure JWT-claims check, zero DB round trips per request.</p>
+    <div class="code-block">
+      <div class="file">📄 SeedRbacAsync — src/Services/Auth/CommerceSphere.AuthService.Infrastructure/Extensions/InfrastructureExtensions.cs</div>
+      <pre><code class="language-csharp">// Runs on every startup, additive:
+// 1. Creates system roles if missing: Admin (IsSystem), Customer (IsSystem, IsDefault — assigned on self-registration)
+// 2. Seeds base menus if the table is empty: dashboard, products, categories, inventory, users, roles, menus, permissions, settings
+// 3. Backfills NEWER menus even on a non-empty table: banners, support-chat
+//    ("where agents answer live customer chats (ChatService)")
+// 4. Diffs Admin's granted menu IDs against ALL menu IDs and inserts missing
+//    RoleMenuPermission rows with full CRUD — Admin always ends up with every permission,
+//    including ones added long after the initial seed.
+// Customer gets NO menu permissions — storefront users never hit [HasPermission] endpoints,
+// only [Authorize]/role checks.</code></pre>
+    </div>
+    <div class="callout note"><div class="callout-title">💡 Why this matters for Chat</div>The <code>support-chat</code> menu entry seeded here is the permission gate behind the admin support inbox — see the <a class="inline-link" href="chat.html#model">Chat Service page</a>.</div>
+  </section>
+
+  <section class="block" id="security">
+    <h2><span class="num">8</span> SSO, 2FA, OTP, email verification, password reset — one shared primitive underneath</h2>
+    <p class="section-intro">Five features that look separate from the controller list share one mechanism: a Redis-backed <code>ChallengeToken</code> (5-minute TTL) that represents "this login/action is in-progress but not yet complete." Whatever completes the challenge — a TOTP code, an email OTP, a new password — is what actually mints the final JWT/refresh-token pair.</p>
+    <div class="diagram">
+      <pre class="mermaid">
+flowchart LR
+    LOGIN["Normal login attempt"] --> CHECK{"2FA or OTP<br/>enabled? Forced<br/>password change?"}
+    CHECK -->|"no"| TOKENS["✅ issue JWT + refresh token"]
+    CHECK -->|"yes"| CT["ChallengeToken<br/>(Redis, 5 min TTL)"]
+    CT --> V2FA["POST /2fa/verify<br/>(TOTP code)"]
+    CT --> VOTP["POST /otp/verify<br/>(emailed 6-digit code)"]
+    CT --> VPWD["POST /password/complete-forced-change"]
+    V2FA --> TOKENS
+    VOTP --> TOKENS
+    VPWD --> TOKENS
+      </pre>
+    </div>
+    <table>
+      <tr><th>Feature</th><th>Mechanism</th></tr>
+      <tr><td><b>SSO (Google / Facebook)</b></td><td><code>GET /sso/login/{provider}</code> builds the provider's OAuth URL and stores <code>{provider, redirectUri}</code> + a random CSRF <code>state</code> in Redis (also guards against open redirects via an allow-list). <code>GET /sso/callback</code> resolves the user by <code>(provider, external id)</code> first, then by email — auto-linking a password account to a social login — or creates a new user inside a DB transaction with a unique-constraint fallback for concurrent first-time signups. Issues the same JWT/refresh pair as password login, then redirects the browser to the frontend with tokens in the query string.</td></tr>
+      <tr><td><b>2FA (TOTP)</b></td><td>RFC 6238 via the <code>OtpNet</code> library. <code>POST /2fa/setup</code> generates a Base32 secret + <code>otpauth://</code> QR URI; <code>POST /2fa/confirm</code> validates the first code (±1 time-step for clock drift) to activate; <code>POST /2fa/verify</code> completes a pending login challenge.</td></tr>
+      <tr><td><b>OTP (email one-time code)</b></td><td>Independent of TOTP — a 6-digit code from <code>RandomNumberGenerator</code> (not <code>Random.Shared</code>), stored in Redis with a 5-minute TTL, single-use (deleted on success). Toggled per-user via <code>POST /otp/toggle</code>.</td></tr>
+      <tr><td><b>Email verification</b></td><td>Token + expiry stored on the <code>User</code> entity. <code>/verify/resend</code> is deliberately email-enumeration-safe — silently no-ops for an unknown or already-verified address instead of revealing which.</td></tr>
+      <tr><td><b>Forgot / reset password</b></td><td><code>/password/forgot</code> always returns success regardless of whether the email exists (same enumeration-safety pattern). <code>/password/reset</code> validates the token, rehashes with BCrypt, and <b>revokes every active refresh token</b> for that user — forces re-login on all devices after a password reset.</td></tr>
+      <tr><td><b>Admin-forced password change</b></td><td>A distinct flow from self-service reset: an admin issues a temporary password, and the user is routed through <code>POST /password/complete-forced-change</code> via a <code>ChallengeType.PasswordChange</code> token on their next login — same challenge-token primitive as 2FA/OTP.</td></tr>
+      <tr><td><b>Session management</b></td><td><code>GET /api/auth/sessions</code> lists the caller's own active refresh tokens (IP, created/expiry). <code>DELETE /api/auth/sessions</code> revokes <b>all</b> of them at once. Self-service only — there's no per-session revoke or admin-viewing-another-user's-sessions endpoint.</td></tr>
+    </table>
+  </section>
+
+  <section class="block" id="entities">
+    <h2><span class="num">9</span> Domain model &amp; routes</h2>
+    <p>Every entity: private parameterless constructor (EF only) + a static <code>Create(...)</code> factory + behavior methods that mutate private-setter state. <code>User</code> holds lockout state, 2FA/OTP toggles, password-reset tokens, and navigation collections for <code>RefreshToken</code>/<code>ExternalLogin</code>.</p>
+    <table>
+      <tr><th>Controller</th><th>Base route</th><th>Highlights</th></tr>
+      <tr><td>AuthController</td><td><code>api/auth</code></td><td>register, login, refresh-token, revoke-token, admin user CRUD</td></tr>
+      <tr><td>AccountController</td><td><code>api/auth</code></td><td>self-service profile, change-password, sessions</td></tr>
+      <tr><td>TwoFactorController</td><td><code>api/auth/2fa</code></td><td>TOTP setup/confirm/disable/verify</td></tr>
+      <tr><td>OtpController</td><td><code>api/auth/otp</code></td><td>email one-time-code verify/toggle</td></tr>
+      <tr><td>RbacController</td><td><code>api/auth</code></td><td>roles, menus, permission grants</td></tr>
+      <tr><td>SsoController</td><td><code>api/auth/sso</code></td><td>OAuth provider login/callback</td></tr>
+    </table>
+  </section>
+
+  <div class="page-footer-nav">
+    <a class="prev" href="gateway.html"><div class="lbl">← Prev</div><div class="name">API Gateway</div></a>
+    <a class="next" href="product.html"><div class="lbl">Next →</div><div class="name">Product Service</div></a>
+  </div>
+
+  <footer class="site-footer">CommerceSphere internal architecture guide</footer>
+</div>
+
+<script src="../assets/main.js"></script>
+</body>
+</html>

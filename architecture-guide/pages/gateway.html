@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API Gateway — CommerceSphere Architecture Guide</title>
+<link rel="stylesheet" href="../assets/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>:root{--accent:var(--gateway);}</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="../index.html"><span class="logo">🧭</span> CommerceSphere Guide</a>
+    <nav class="topnav">
+      <a href="../index.html">Overview</a>
+      <a href="gateway.html">Gateway</a>
+      <a href="auth.html">Auth</a>
+      <a href="product.html">Product</a>
+      <a href="inventory.html">Inventory</a>
+      <a href="cart.html">Cart</a>
+      <a href="notification.html">Notification</a>
+      <a href="chat.html">Chat</a>
+      <a href="shared.html">Shared Libs</a>
+      <a href="docker.html">Dockerize</a>
+    </nav>
+    <div class="spacer"></div>
+    <button class="theme-toggle" id="theme-toggle">🌙 Dark</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="page-head">
+    <a class="back-link" href="../index.html">← Back to overview</a>
+    <div class="kicker"><span class="dot"></span> Entry point · YARP reverse proxy</div>
+    <h1>🚪 API Gateway</h1>
+    <p class="dek">The single front door for every client. Routes by path prefix to internal Docker DNS names, terminates JWT auth, rate-limits, injects a correlation ID that threads through every downstream log line, and actively health-checks every cluster.</p>
+    <div class="meta-row">
+      <span class="badge" style="--accent:var(--gateway)">src/ApiGateway/CommerceSphere.ApiGateway</span>
+      <span class="badge" style="--accent:var(--gateway)">Port 5000</span>
+      <span class="badge" style="--accent:var(--gateway)">200 req/min</span>
+      <span class="badge" style="--accent:var(--gateway)">6 clusters</span>
+    </div>
+  </div>
+
+  <div class="toc">
+    <a href="#highlevel">High-level flow</a>
+    <a href="#routing">Routing table</a>
+    <a href="#jwt">JWT validation</a>
+    <a href="#ratelimit">Rate limiting</a>
+    <a href="#correlation">Correlation ID</a>
+    <a href="#health">Health checks</a>
+  </div>
+
+  <section class="block" id="highlevel">
+    <h2><span class="num">1</span> High-level: one door, six services behind it</h2>
+    <p class="section-intro">Every external call — from the storefront, the admin panel, or Postman — hits the gateway on <code>:5000</code>. Nothing talks to <code>auth-service</code>, <code>product-service</code>, etc. directly; the gateway is the only container with a published port in production.</p>
+    <div class="diagram">
+      <pre class="mermaid">
+flowchart LR
+    C["🌐 Client<br/>(web / admin / mobile)"] -->|"HTTPS :5000"| GW["🚪 API Gateway<br/>(YARP)"]
+    GW -->|"/api/auth/**"| AUTH["Auth Service"]
+    GW -->|"/api/products/**"| PROD["Product Service"]
+    GW -->|"/api/inventory/**"| INV["Inventory Service"]
+    GW -->|"/api/carts/**"| CART["Cart Service"]
+    GW -->|"/api/notifications/**<br/>/hubs/notifications (WS)"| NOTIF["Notification Service"]
+    GW -->|"/hubs/chat/**"| CHAT["Chat Service"]
+    GW -.->|"10s active healthcheck"| AUTH
+    GW -.->|"10s active healthcheck"| PROD
+      </pre>
+    </div>
+    <div class="diagram-caption">All internal hops use Docker's bridge network (<code>commerce-net</code>) and Docker DNS — <code>http://auth-service:80</code> resolves without any service discovery infra.</div>
+  </section>
+
+  <section class="block" id="routing">
+    <h2><span class="num">2</span> Low-level: routes → clusters → destinations</h2>
+    <p class="section-intro">YARP config lives entirely in <code>appsettings.json</code> — no C# route-building code. A <b>route</b> matches a path pattern and points at a <b>cluster</b>; a cluster holds one or more physical <b>destinations</b> plus its own load-balancing and health-check policy.</p>
+    <div class="code-block">
+      <div class="file">📄 src/ApiGateway/CommerceSphere.ApiGateway/appsettings.json</div>
+      <pre><code class="language-json">"Routes": {
+  "auth-route":      { "ClusterId": "auth-cluster",      "Match": { "Path": "/api/auth/{**catch-all}" } },
+  "products-route":  { "ClusterId": "product-cluster",   "Match": { "Path": "/api/products/{**catch-all}" } },
+  "inventory-route": { "ClusterId": "inventory-cluster", "AuthorizationPolicy": "default",
+                        "Match": { "Path": "/api/inventory/{**catch-all}" } },
+  "cart-route":      { "ClusterId": "cart-cluster",      "AuthorizationPolicy": "default",
+                        "Match": { "Path": "/api/carts/{**catch-all}" } },
+  "chat-hub-route":  { "ClusterId": "chat-cluster",      "Match": { "Path": "/hubs/chat/{**catch-all}" } }
+},
+"Clusters": {
+  "auth-cluster": {
+    "LoadBalancingPolicy": "RoundRobin",
+    "HealthCheck": {
+      "Active": { "Enabled": true, "Interval": "00:00:10", "Timeout": "00:00:10",
+                  "Policy": "ConsecutiveFailures", "Path": "/health" }
+    },
+    "Destinations": { "auth-service/primary": { "Address": "http://auth-service:80" } }
+  }
+}</code></pre>
+    </div>
+    <table>
+      <tr><th>Path prefix</th><th>Cluster</th><th>Destination</th><th>Auth policy</th></tr>
+      <tr><td><code>/api/auth/**</code></td><td>auth-cluster</td><td>http://auth-service:80</td><td>none (login/register are public)</td></tr>
+      <tr><td><code>/api/products/**</code></td><td>product-cluster</td><td>http://product-service:80</td><td>none at gateway (service enforces per-route)</td></tr>
+      <tr><td><code>/api/inventory/**</code></td><td>inventory-cluster</td><td>http://inventory-service:80</td><td><code>default</code></td></tr>
+      <tr><td><code>/api/carts/**</code></td><td>cart-cluster</td><td>http://cart-service:80</td><td><code>default</code></td></tr>
+      <tr><td><code>/api/notifications/**</code>, <code>/hubs/notifications/**</code></td><td>notification-cluster</td><td>http://notification-service:80</td><td><code>default</code> (WS upgrade-aware)</td></tr>
+      <tr><td><code>/hubs/chat/**</code></td><td>chat-cluster</td><td>http://chat-service:80</td><td>none</td></tr>
+    </table>
+    <div class="callout note"><div class="callout-title">💡 Note</div>Each service still enforces its own <code>[Authorize]</code>/<code>[HasPermission]</code> attributes independently — the gateway's <code>AuthorizationPolicy</code> is a coarse first gate, not the only one. Defense in depth: a request that somehow bypasses the gateway still can't reach a protected controller action without a valid JWT.</div>
+  </section>
+
+  <section class="block" id="jwt">
+    <h2><span class="num">3</span> JWT validation at the edge</h2>
+    <p class="section-intro">The gateway validates the same HS256 JWT that Auth issues, using the shared <code>Jwt:Secret</code>. Rejected tokens never reach a downstream service.</p>
+    <div class="code-block">
+      <div class="file">📄 src/ApiGateway/CommerceSphere.ApiGateway/Program.cs</div>
+      <pre><code class="language-csharp">builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(opts =>
+    {
+        opts.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwtSection["Issuer"],
+            ValidAudience = jwtSection["Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSection["Secret"]!)),
+            ClockSkew = TimeSpan.Zero   // deliberate: no 5-minute default grace period
+        };
+    });</code></pre>
+    </div>
+    <p>After validation succeeds, a YARP transform pipeline re-derives trusted headers from the token's claims and forwards them downstream, so services never need to re-parse the JWT themselves for basic identity:</p>
+    <div class="kv-grid">
+      <div class="kv"><div class="k">Forwarded header</div><div class="v"><code>X-User-Id</code></div></div>
+      <div class="kv"><div class="k">Forwarded header</div><div class="v"><code>X-User-Role</code></div></div>
+      <div class="kv"><div class="k">Forwarded header</div><div class="v"><code>X-User-Name</code></div></div>
+    </div>
+  </section>
+
+  <section class="block" id="ratelimit">
+    <h2><span class="num">4</span> Rate limiting — 200 req/min, fixed window</h2>
+    <div class="code-block">
+      <div class="file">📄 src/ApiGateway/CommerceSphere.ApiGateway/Program.cs</div>
+      <pre><code class="language-csharp">builder.Services.AddRateLimiter(opts =>
+{
+    opts.AddFixedWindowLimiter("gateway-fixed", o =>
+    {
+        o.Window = TimeSpan.FromMinutes(1);
+        o.PermitLimit = 200;
+        o.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+        o.QueueLimit = 20;
+    });
+    opts.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+});</code></pre>
+    </div>
+    <p>Applied per route via <code>"RateLimiterPolicy": "gateway-fixed"</code>. A burst beyond 200/min queues up to 20 requests (oldest served first) before returning <code>429</code> — smoother than a hard cutoff, but still bounded.</p>
+  </section>
+
+  <section class="block" id="correlation">
+    <h2><span class="num">5</span> Correlation ID propagation</h2>
+    <p class="section-intro">Every request gets (or keeps) an <code>X-Correlation-ID</code> header at the gateway, which every downstream service's <code>GlobalExceptionMiddleware</code> and log scope reads back — one ID to grep across five services' log files for a single user action.</p>
+    <div class="diagram">
+      <pre class="mermaid">
+sequenceDiagram
+    participant C as Client
+    participant G as Gateway
+    participant S as Any downstream service
+    C->>G: Request (no X-Correlation-ID)
+    G->>G: generate new correlation id
+    G->>S: forward + X-Correlation-ID
+    S->>S: attach id to log scope + ApiResponse.CorrelationId
+    S-->>G: response
+    G-->>C: response + X-Correlation-ID echoed
+      </pre>
+    </div>
+  </section>
+
+  <section class="block" id="health">
+    <h2><span class="num">6</span> Active health checks</h2>
+    <p class="section-intro">Each cluster can define an <code>Active</code> health check that YARP polls independently of live traffic — a service that starts failing <code>/health</code> is pulled out of rotation before real requests hit it.</p>
+    <div class="kv-grid">
+      <div class="kv"><div class="k">Interval</div><div class="v">10s</div></div>
+      <div class="kv"><div class="k">Timeout</div><div class="v">10s</div></div>
+      <div class="kv"><div class="k">Policy</div><div class="v">ConsecutiveFailures</div></div>
+      <div class="kv"><div class="k">Path</div><div class="v"><code>/health</code></div></div>
+    </div>
+    <div class="callout warn"><div class="callout-title">⚠️ Coverage gap</div>Only <code>auth-cluster</code> and <code>product-cluster</code> currently have the <code>HealthCheck.Active</code> block wired in <code>appsettings.json</code>. Inventory, Cart, Notification and Chat clusters route traffic without an active health probe at the gateway layer — worth adding for parity, since Docker Compose's own <code>service_healthy</code> gate only protects startup ordering, not runtime routing decisions.</div>
+  </section>
+
+  <div class="page-footer-nav">
+    <a class="prev" href="../index.html"><div class="lbl">← Back</div><div class="name">Overview</div></a>
+    <a class="next" href="auth.html"><div class="lbl">Next →</div><div class="name">Auth Service</div></a>
+  </div>
+
+  <footer class="site-footer">CommerceSphere internal architecture guide</footer>
+</div>
+
+<script src="../assets/main.js"></script>
+</body>
+</html>

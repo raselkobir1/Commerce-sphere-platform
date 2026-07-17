@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dockerizing the Stack — CommerceSphere Architecture Guide</title>
+<link rel="stylesheet" href="../assets/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>:root{--accent:var(--docker);}</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="../index.html"><span class="logo">🧭</span> CommerceSphere Guide</a>
+    <nav class="topnav">
+      <a href="../index.html">Overview</a>
+      <a href="gateway.html">Gateway</a>
+      <a href="auth.html">Auth</a>
+      <a href="product.html">Product</a>
+      <a href="inventory.html">Inventory</a>
+      <a href="cart.html">Cart</a>
+      <a href="notification.html">Notification</a>
+      <a href="chat.html">Chat</a>
+      <a href="shared.html">Shared Libs</a>
+      <a href="docker.html">Dockerize</a>
+    </nav>
+    <div class="spacer"></div>
+    <button class="theme-toggle" id="theme-toggle">🌙 Dark</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="page-head">
+    <a class="back-link" href="../index.html">← Back to overview</a>
+    <div class="kicker"><span class="dot"></span> Foundations · Build &amp; run the entire stack</div>
+    <h1>🐳 Dockerizing the Whole Application</h1>
+    <p class="dek">Every service builds from an identical 4-stage Dockerfile shape. One <code>docker-compose.yml</code> wires up all six services, six Postgres instances, Redis, and Kafka — and two overlay files (<code>override.yml</code> for dev, <code>prod.yml</code> for production) change behaviour without touching the base file.</p>
+    <div class="meta-row">
+      <span class="badge" style="--accent:var(--docker)">docker-compose.yml</span>
+      <span class="badge" style="--accent:var(--docker)">docker-compose.override.yml</span>
+      <span class="badge" style="--accent:var(--docker)">docker-compose.prod.yml</span>
+      <span class="badge" style="--accent:var(--docker)">docker-compose.dev.yml</span>
+    </div>
+  </div>
+
+  <div class="toc">
+    <a href="#highlevel">Container topology</a>
+    <a href="#dockerfile">Multi-stage Dockerfile</a>
+    <a href="#base">Base compose file</a>
+    <a href="#override">Dev overlay</a>
+    <a href="#prod">Production overlay</a>
+    <a href="#env">Environment files</a>
+    <a href="#commands">Commands cheat sheet</a>
+  </div>
+
+  <section class="block" id="highlevel">
+    <h2><span class="num">1</span> Container topology</h2>
+    <p class="section-intro">One bridge network (<code>commerce-net</code>) holds everything. Each service owns a private Postgres instance — no shared database, matching the per-service-DB microservice rule. Redis and Kafka are the only shared infrastructure.</p>
+    <div class="diagram">
+      <pre class="mermaid">
+flowchart TB
+    subgraph net["commerce-net (Docker bridge network)"]
+      GW["api-gateway<br/>:5000 (only published port in prod)"]
+      AUTH["auth-service"] --- PGA[("postgres-auth")]
+      PROD["product-service"] --- PGP[("postgres-product")]
+      INV["inventory-service"] --- PGI[("postgres-inventory")]
+      CART["cart-service"] --- PGC[("postgres-cart")]
+      NOTIF["notification-service"] --- PGN[("postgres-notification")]
+      CHAT["chat-service"] --- PGCH[("postgres-chat")]
+      REDIS[("redis:7-alpine<br/>shared")]
+      KAFKA[("kafka (KRaft, no ZooKeeper)<br/>:9094 external")]
+      GW --> AUTH & PROD & INV & CART & NOTIF & CHAT
+      AUTH & PROD & INV & CART & NOTIF -.-> REDIS
+      AUTH & PROD & INV & CART & NOTIF -.-> KAFKA
+    end
+    CLIENT["🌐 Client"] --> GW
+      </pre>
+    </div>
+  </section>
+
+  <section class="block" id="dockerfile">
+    <h2><span class="num">2</span> Every service: the same 4-stage Dockerfile</h2>
+    <p class="section-intro">All six microservice Dockerfiles + the API Gateway's follow the identical shape — only the list of copied <code>.csproj</code> references and the final <code>.dll</code> name differ.</p>
+    <div class="code-block">
+      <div class="file">📄 src/Services/Auth/CommerceSphere.AuthService.API/Dockerfile</div>
+      <pre><code class="language-dockerfile">FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
+RUN apt-get update && apt-get install -y curl --no-install-recommends && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+EXPOSE 80
+
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+COPY ["src/Shared/CommerceSphere.Shared.Common/CommerceSphere.Shared.Common.csproj", "src/Shared/CommerceSphere.Shared.Common/"]
+COPY ["src/Shared/CommerceSphere.Shared.Contracts/CommerceSphere.Shared.Contracts.csproj", "src/Shared/CommerceSphere.Shared.Contracts/"]
+COPY ["src/Services/Auth/CommerceSphere.AuthService.Domain/CommerceSphere.AuthService.Domain.csproj", "src/Services/Auth/CommerceSphere.AuthService.Domain/"]
+COPY ["src/Services/Auth/CommerceSphere.AuthService.Application/CommerceSphere.AuthService.Application.csproj", "src/Services/Auth/CommerceSphere.AuthService.Application/"]
+COPY ["src/Services/Auth/CommerceSphere.AuthService.Infrastructure/CommerceSphere.AuthService.Infrastructure.csproj", "src/Services/Auth/CommerceSphere.AuthService.Infrastructure/"]
+COPY ["src/Services/Auth/CommerceSphere.AuthService.API/CommerceSphere.AuthService.API.csproj", "src/Services/Auth/CommerceSphere.AuthService.API/"]
+RUN dotnet restore "src/Services/Auth/CommerceSphere.AuthService.API/CommerceSphere.AuthService.API.csproj"
+COPY . .
+RUN dotnet build "src/Services/Auth/CommerceSphere.AuthService.API/CommerceSphere.AuthService.API.csproj" -c Release -o /app/build
+
+FROM build AS publish
+RUN dotnet publish "src/Services/Auth/CommerceSphere.AuthService.API/CommerceSphere.AuthService.API.csproj" -c Release -o /app/publish /p:UseAppHost=false
+
+FROM base AS final
+WORKDIR /app
+COPY --from=publish /app/publish .
+ENTRYPOINT ["dotnet", "CommerceSphere.AuthService.API.dll"]</code></pre>
+    </div>
+    <ol class="steps">
+      <li><b>base</b><span class="sub">Slim ASP.NET runtime image + <code>curl</code> installed — specifically so the container healthcheck (<code>curl -f http://localhost:80/health</code>) works without needing the full SDK.</span></li>
+      <li><b>build</b><span class="sub">Full SDK image. <code>.csproj</code> files are copied and restored <i>before</i> the full source tree — a layer-caching trick: source edits don't invalidate the (slow) restore layer unless a project reference actually changed.</span></li>
+      <li><b>publish</b><span class="sub"><code>dotnet publish -c Release</code>, framework-dependent (<code>UseAppHost=false</code> — no native executable, just the DLL + runtime config).</span></li>
+      <li><b>final</b><span class="sub">Copies only the published output onto the slim <code>base</code> image — the SDK and full source tree never ship in the final image.</span></li>
+    </ol>
+    <p>The API Gateway's Dockerfile is the same shape but shorter — it only depends on <code>Shared.Common</code>, not <code>Shared.Contracts</code> or a Domain/Application/Infrastructure stack, since it has no domain logic of its own.</p>
+  </section>
+
+  <section class="block" id="base">
+    <h2><span class="num">3</span> Base <code>docker-compose.yml</code></h2>
+    <div class="kv-grid">
+      <div class="kv"><div class="k">Network</div><div class="v">commerce-net (single bridge)</div></div>
+      <div class="kv"><div class="k">Postgres</div><div class="v">6× postgres:16-alpine, one per service</div></div>
+      <div class="kv"><div class="k">Redis</div><div class="v">redis:7-alpine, shared, appendonly + LRU eviction</div></div>
+      <div class="kv"><div class="k">Kafka</div><div class="v">confluentinc/cp-kafka, KRaft mode (no ZooKeeper)</div></div>
+    </div>
+    <div class="code-block">
+      <div class="file">📄 docker-compose.yml (excerpt)</div>
+      <pre><code class="language-yaml">redis:
+  image: redis:7-alpine
+  command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+  healthcheck:
+    test: ["CMD", "redis-cli", "ping"]
+
+kafka:
+  image: confluentinc/cp-kafka:latest
+  ports: ["9094:9094"]              # external access
+  healthcheck:
+    test: ["CMD", "kafka-topics", "--list", "--bootstrap-server", "localhost:9092"]
+    interval: 15s
+    timeout: 10s
+    retries: 10
+    start_period: 30s
+
+auth-service:
+  build:
+    context: .                       # repo root, so the Dockerfile can COPY src/Shared/...
+    dockerfile: src/Services/Auth/CommerceSphere.AuthService.API/Dockerfile
+  environment:
+    ASPNETCORE_ENVIRONMENT: Production
+    ConnectionStrings__AuthDb: "Host=postgres-auth;Database=...;Username=commerce;Password=commerce_pass"
+  depends_on:
+    postgres-auth: { condition: service_healthy }
+    redis:         { condition: service_healthy }
+    kafka:         { condition: service_healthy }
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+    interval: 15s
+    timeout: 10s
+    retries: 5
+    start_period: 20s
+
+cart-service:
+  depends_on:
+    inventory-service: { condition: service_healthy }   # cross-service saga dependency
+    # ...plus its own postgres/redis/kafka
+
+api-gateway:
+  ports: ["5000:80"]
+  depends_on:
+    auth-service: { condition: service_healthy }
+    product-service: { condition: service_healthy }
+    inventory-service: { condition: service_healthy }
+    cart-service: { condition: service_healthy }
+    notification-service: { condition: service_healthy }
+    chat-service: { condition: service_healthy }</code></pre>
+    </div>
+    <p><code>cart-service</code> explicitly waits on <code>inventory-service</code> being healthy before starting — a direct reflection of the checkout saga's dependency (see the <a class="inline-link" href="cart.html#highlevel">Cart page</a>). <code>api-gateway</code> waits on every domain service, since its whole job is to front them.</p>
+  </section>
+
+  <section class="block" id="override">
+    <h2><span class="num">4</span> Dev overlay — <code>docker-compose.override.yml</code> (auto-loaded)</h2>
+    <p class="section-intro">Plain <code>docker compose up -d</code> automatically merges this file on top of the base — no <code>-f</code> flags needed. This is what makes local development ergonomic.</p>
+    <ul>
+      <li>Sets <code>ASPNETCORE_ENVIRONMENT=Development</code> on every service → Swagger UI at <code>/swagger</code> + detailed error pages + <code>appsettings.Development.json</code> picked up.</li>
+      <li><code>env_file: .env.development</code> per service, supplying <code>${JWT_SECRET}</code>, <code>${GOOGLE_CLIENT_ID}</code>, <code>${CLOUDINARY_*}</code>, etc., with safe <code>${VAR:-default}</code> fallbacks.</li>
+      <li><b>Every</b> port is published to the host — Auth <code>5211</code>, Product <code>5095</code>, Inventory <code>5035</code>, Cart <code>5236</code>, Notification <code>5240</code>, Chat <code>5245</code>, plus every Postgres instance (<code>5433</code>–<code>5438</code>) and <code>redis:6379</code> — for direct Postman/TablePlus/pgAdmin access.</li>
+      <li>Dev-only tooling added: <b>kafka-ui</b> (browse topics at <code>:8090</code>), <b>pgadmin</b> (<code>:5050</code>), <b>mailpit</b> (SMTP trap — catches verification/OTP/order emails, web UI <code>:8025</code>).</li>
+    </ul>
+    <div class="callout note"><div class="callout-title">💡 No bind-mount hot reload</div>The compose file doesn't wire up source-mount hot reload. The documented hybrid workflow instead: run <b>only infra</b> in Docker and each service locally via <code>dotnet run</code> for instant hot reload —
+    <div class="code-block" style="margin-top:10px;"><pre><code class="language-bash">docker compose up -d postgres-auth postgres-product postgres-inventory postgres-cart redis kafka
+dotnet run --project src/Services/Auth/CommerceSphere.AuthService.API</code></pre></div>
+    </div>
+  </section>
+
+  <section class="block" id="prod">
+    <h2><span class="num">5</span> Production overlay — <code>docker-compose.prod.yml</code> (explicit <code>-f</code> required)</h2>
+    <p class="section-intro">This file is <b>not</b> auto-loaded — it must be named explicitly, and <code>override.yml</code> is skipped entirely (Compose only auto-merges <code>docker-compose.override.yml</code>, never other override files).</p>
+    <ul>
+      <li>Every service gets <code>env_file: .env.production</code> + <code>ASPNETCORE_ENVIRONMENT=Production</code>.</li>
+      <li><b>Only <code>api-gateway</code></b> publishes a port (<code>5000:80</code>) — every internal service, every Postgres instance, Redis, and Kafka are unreachable from the host. The inline comment calls this out directly: "only port exposed to the internet."</li>
+      <li>Secrets come from <code>${VAR}</code> substitution with <b>no dev fallback defaults</b> (unlike the dev overlay's <code>${VAR:-default}</code>) — a missing production secret fails loudly instead of silently falling back to a dev value.</li>
+      <li><code>restart: unless-stopped</code> is set at the base-file level and simply inherited here.</li>
+      <li>Comment recommends a CI/CD pipeline inject these as real environment variables rather than writing <code>.env.production</code> to disk on a server.</li>
+    </ul>
+  </section>
+
+  <section class="block" id="env">
+    <h2><span class="num">6</span> Environment files</h2>
+    <table>
+      <tr><th>File</th><th>Committed?</th><th>Purpose</th></tr>
+      <tr><td><code>.env.development.example</code></td><td>yes</td><td>template — copy to <code>.env.development</code></td></tr>
+      <tr><td><code>.env.development</code></td><td><b>no</b> (gitignored)</td><td>local dev secrets (real OAuth creds etc.)</td></tr>
+      <tr><td><code>.env.production.example</code></td><td>yes</td><td>template with <code>CHANGE_ME_*</code> placeholders</td></tr>
+      <tr><td><code>.env.production</code></td><td><b>no</b> (gitignored)</td><td>real prod secrets</td></tr>
+    </table>
+    <div class="code-block">
+      <div class="file">📄 .env.production.example (shape)</div>
+      <pre><code class="language-bash">POSTGRES_USER=commerce
+POSTGRES_PASSWORD=CHANGE_ME_use_openssl_rand
+
+JWT_SECRET=CHANGE_ME_use_openssl_rand_-base64_48
+JWT_ISSUER=CommerceSphere
+JWT_AUDIENCE=CommerceSphereClients
+JWT_EXPIRY_MINUTES=60
+
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+FACEBOOK_CLIENT_ID=
+FACEBOOK_CLIENT_SECRET=
+
+CLOUDINARY_CLOUD_NAME=
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=</code></pre>
+    </div>
+    <p>Generate a real secret with <code>openssl rand -base64 48</code> — the prod template documents this directly instead of shipping a real-looking placeholder someone might forget to change.</p>
+  </section>
+
+  <section class="block" id="commands">
+    <h2><span class="num">7</span> Commands cheat sheet</h2>
+    <div class="code-block">
+      <div class="file">📄 Build all images</div>
+      <pre><code class="language-bash">docker compose build</code></pre>
+    </div>
+    <div class="code-block">
+      <div class="file">📄 Start the full dev stack (override.yml auto-merged: Swagger on, all ports exposed, kafka-ui/pgadmin/mailpit included)</div>
+      <pre><code class="language-bash">docker compose up -d</code></pre>
+    </div>
+    <div class="code-block">
+      <div class="file">📄 Start production (explicit two -f flags — override.yml is NOT applied)</div>
+      <pre><code class="language-bash">cp .env.production.example .env.production   # fill in real secrets first, one-time
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d</code></pre>
+    </div>
+    <div class="code-block">
+      <div class="file">📄 Hybrid dev: infra only in Docker, services run locally via `dotnet run` for hot reload</div>
+      <pre><code class="language-bash">docker compose up -d postgres-auth postgres-product postgres-inventory postgres-cart redis kafka
+dotnet run --project src/Services/Auth/CommerceSphere.AuthService.API</code></pre>
+    </div>
+    <div class="code-block">
+      <div class="file">📄 Tear down (keep named volumes / DB data)</div>
+      <pre><code class="language-bash">docker compose down</code></pre>
+    </div>
+    <div class="code-block">
+      <div class="file">📄 Tear down AND wipe all Postgres/Redis data (destructive)</div>
+      <pre><code class="language-bash">docker compose down -v</code></pre>
+    </div>
+    <p>No manual EF migration step is needed in any of these flows — every service calls <code>Database.MigrateAsync()</code> automatically on startup (e.g. <code>MigrateAuthDbAsync()</code>, <code>MigrateCartDbAsync()</code>) before it begins serving traffic.</p>
+  </section>
+
+  <div class="page-footer-nav">
+    <a class="prev" href="shared.html"><div class="lbl">← Prev</div><div class="name">Shared Libraries</div></a>
+    <a class="next" href="../index.html"><div class="lbl">Back to →</div><div class="name">Overview</div></a>
+  </div>
+
+  <footer class="site-footer">CommerceSphere internal architecture guide</footer>
+</div>
+
+<script src="../assets/main.js"></script>
+</body>
+</html>
