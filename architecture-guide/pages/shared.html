@@ -25,6 +25,7 @@
       <a href="notification.html">Notification</a>
       <a href="chat.html">Chat</a>
       <a href="shared.html">Shared Libs</a>
+      <a href="system-design.html">System Design</a>
       <a href="docker.html">Dockerize</a>
     </nav>
     <div class="spacer"></div>
@@ -130,7 +131,7 @@
       <tr><td>Inventory</td><td><code>idempotency:inv:*</code></td><td>✅ <code>InventoryManager.ReserveAsync</code> — atomic claim, short TTL, extended on success</td></tr>
       <tr><td>Cart</td><td><code>idempotency:cart:*</code></td><td>✅ <code>CartManager.CheckoutAsync</code> (checkout-race guard) and <code>InventorySagaConsumer</code> (per-event dedup) — see the <a class="inline-link" href="cart.html#idempotency">Cart page</a></td></tr>
     </table>
-    <div class="callout ok"><div class="callout-title">✅ Fixed</div>Cart's <code>IIdempotencyService</code> used to be injected and never called at all — <code>CheckoutAsync</code> now claims <code>checkout:{'{'}CartId{'}'}</code> before proceeding, and <code>InventorySagaConsumer</code> (previously the one Kafka consumer in the platform with zero dedup guard) now claims <code>saga:reserved:{'{'}CartId{'}'}</code> / <code>saga:reservation-failed:{'{'}CartId{'}'}</code> before acting on a redelivered event.</div>
+    <div class="callout ok"><div class="callout-title">✅ Fixed</div>Cart's <code>IIdempotencyService</code> used to be injected and never called at all — <code>CheckoutAsync</code> now claims <code>checkout:{CartId}</code> before proceeding, and <code>InventorySagaConsumer</code> (previously the one Kafka consumer in the platform with zero dedup guard) now claims <code>saga:reserved:{CartId}</code> / <code>saga:reservation-failed:{CartId}</code> before acting on a redelivered event.</div>
   </section>
 
   <section class="block" id="lock">
@@ -233,7 +234,7 @@ public static AsyncRetryPolicy HttpRetryPolicy(ILogger logger) =>
 
   <div class="page-footer-nav">
     <a class="prev" href="chat.html"><div class="lbl">← Prev</div><div class="name">Chat Service</div></a>
-    <a class="next" href="docker.html"><div class="lbl">Next →</div><div class="name">Dockerizing the Stack</div></a>
+    <a class="next" href="system-design.html"><div class="lbl">Next →</div><div class="name">System Design</div></a>
   </div>
 
   <footer class="site-footer">CommerceSphere internal architecture guide</footer>

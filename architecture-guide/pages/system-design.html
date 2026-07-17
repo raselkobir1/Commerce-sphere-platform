@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>System Design — CommerceSphere Architecture Guide</title>
+<link rel="stylesheet" href="../assets/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>:root{--accent:var(--systemdesign);}</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="../index.html"><span class="logo">🧭</span> CommerceSphere Guide</a>
+    <nav class="topnav">
+      <a href="../index.html">Overview</a>
+      <a href="gateway.html">Gateway</a>
+      <a href="auth.html">Auth</a>
+      <a href="product.html">Product</a>
+      <a href="inventory.html">Inventory</a>
+      <a href="cart.html">Cart</a>
+      <a href="notification.html">Notification</a>
+      <a href="chat.html">Chat</a>
+      <a href="shared.html">Shared Libs</a>
+      <a href="system-design.html">System Design</a>
+      <a href="docker.html">Dockerize</a>
+    </nav>
+    <div class="spacer"></div>
+    <button class="theme-toggle" id="theme-toggle">🌙 Dark</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="page-head">
+    <a class="back-link" href="../index.html">← Back to overview</a>
+    <div class="kicker"><span class="dot"></span> Foundations · How every service fits together</div>
+    <h1>🗺️ System Design</h1>
+    <p class="dek">Every other page in this guide zooms into one service. This page zooms back out: why the platform is split into these six services and not some other shape, the two topologies that actually connect them (synchronous gateway routing vs. asynchronous Kafka fan-out), one complete customer journey traced hop-by-hop, and a single table of every reliability pattern used anywhere in the codebase — and, just as importantly, where each pattern deliberately <i>isn't</i> used.</p>
+    <div class="meta-row">
+      <span class="badge" style="--accent:var(--systemdesign)">6 domain services</span>
+      <span class="badge" style="--accent:var(--systemdesign)">1 gateway</span>
+      <span class="badge" style="--accent:var(--systemdesign)">9 Kafka topics</span>
+      <span class="badge" style="--accent:var(--systemdesign)">6 Postgres instances</span>
+      <span class="badge" style="--accent:var(--systemdesign)">1 shared Redis</span>
+    </div>
+  </div>
+
+  <div class="toc">
+    <a href="#topology-sync">Synchronous topology</a>
+    <a href="#topology-async">Asynchronous topology</a>
+    <a href="#rationale">Design rationale</a>
+    <a href="#walkthrough">End-to-end walkthrough</a>
+    <a href="#patterns">Patterns catalog</a>
+    <a href="#isolation">What's deliberately NOT shared</a>
+  </div>
+
+  <section class="block" id="topology-sync">
+    <h2><span class="num">1</span> Synchronous topology — one gateway, six isolated databases</h2>
+    <p class="section-intro">Every client request enters through exactly one door. Every service leaves through exactly one door too — its own Postgres instance. No service holds a connection string to another service's database; the only way data crosses a service boundary is a REST call through the gateway or a Kafka event (next section). That's the whole rule the "microservices" label is enforcing here.</p>
+    <div class="diagram">
+      <pre class="mermaid">
+flowchart TB
+    CLIENT["🖥️ Client\nAdminSphere SPA :4200 · ShopSphere SPA :4300"]
+    GW["🚪 API Gateway :5000\nYARP reverse proxy · JWT (HS256) · fixed-window rate limit (200/min)\nCORS · X-Correlation-ID · active health checks (Auth + Product only)"]
+    CLIENT --> GW
+
+    GW -->|"/api/auth/**"| AUTH["🔐 Auth :5211"]
+    GW -->|"/api/products/**\n/api/categories/**\n/api/banners/**"| PRODUCT["🏷️ Product :5095"]
+    GW -->|"/api/inventory/**"| INVENTORY["📦 Inventory :5035"]
+    GW -->|"/api/carts/**"| CART["🛒 Cart :5236"]
+    GW -->|"/api/notifications/**\n/hubs/notifications (WS)"| NOTIF["🔔 Notification :5240"]
+    GW -->|"/api/chat/**\n/hubs/chat (WS)"| CHAT["💬 Chat :5245"]
+
+    CART -.->|"POST /reserve (sync REST,\nthe ONE cross-service HTTP call)"| INVENTORY
+
+    AUTH --- ADB[("postgres-auth\n:5433")]
+    PRODUCT --- PDB[("postgres-product\n:5434")]
+    INVENTORY --- IDB[("postgres-inventory\n:5435")]
+    CART --- CDB[("postgres-cart\n:5436")]
+    NOTIF --- NDB[("postgres-notification\n:5438")]
+    CHAT --- CHDB[("postgres-chat\n:5437")]
+
+    AUTH --- REDIS[("🧠 Redis :6379\nshared, one instance")]
+    PRODUCT --- REDIS
+    INVENTORY --- REDIS
+    CART --- REDIS
+      </pre>
+      <div class="diagram-caption">Notification and Chat never touch Redis at all — see <a class="inline-link" href="#isolation">§6</a>.</div>
+    </div>
+    <p>Two things worth noticing that aren't obvious from the per-service pages in isolation: <b>(1)</b> <code>POST /api/inventory/reserve</code> is the only synchronous call one domain service ever makes to another — everything else that crosses a service boundary goes through Kafka. <b>(2)</b> Redis is one shared container, not one-per-service — Auth, Product, Inventory, and Cart all connect to the same instance, each namespacing its own keys with a service-specific prefix (<code>idempotency:*</code>, <code>idempotency:inv:*</code>, <code>idempotency:cart:*</code>, <code>lock:inventory:*</code>) precisely so four services sharing one Redis can't collide on each other's keys.</p>
+  </section>
+
+  <section class="block" id="topology-async">
+    <h2><span class="num">2</span> Asynchronous topology — nine topics, no service publishes and consumes its own event</h2>
+    <p class="section-intro">This is the diagram the per-service pages can only show you one slice of at a time. Solid arrows are outbox-backed (durable even if Kafka is briefly down); dashed arrows are direct produce calls (Polly-retried, but lost if the process crashes between the DB write and the produce call).</p>
+    <div class="diagram">
+      <pre class="mermaid">
+flowchart LR
+    AUTH["🔐 Auth"]
+    PRODUCT["🏷️ Product"]
+    INVENTORY["📦 Inventory"]
+    CART["🛒 Cart"]
+    NOTIF["🔔 Notification"]
+
+    AUTH ==>|"user-created"| T1(("user-created"))
+    T1 ==> NOTIF
+
+    PRODUCT ==>|"product-created"| T2(("product-created"))
+    T2 ==> INVENTORY
+    PRODUCT -.->|"product-updated (no consumer today)"| T2b(("product-updated"))
+
+    CART ==>|"cart-checkedout\n(via outbox)"| T3(("cart-checkedout"))
+    T3 ==> INVENTORY
+    T3 ==> PRODUCT
+    T3 ==> NOTIF
+
+    CART ==>|"cart-cancelled\n(via outbox)"| T4(("cart-cancelled"))
+    T4 ==> AUTH
+    T4 ==> PRODUCT
+    T4 ==> INVENTORY
+    T4 ==> NOTIF
+
+    CART -.->|"cart-rolledback\n(direct — NOT via outbox)"| T5(("cart-rolledback"))
+
+    INVENTORY ==>|"inventory-reserved"| T6(("inventory-reserved"))
+    T6 ==> CART
+    INVENTORY ==>|"inventory-reservation-failed"| T7(("inventory-reservation-failed"))
+    T7 ==> CART
+    INVENTORY -.->|"inventory-released (no consumer today)"| T8(("inventory-released"))
+      </pre>
+      <div class="diagram-caption">Every arrow into a service is a separate <code>BackgroundService</code> Kafka consumer with manual commit, exponential-backoff retry, and a DLQ topic on exhaustion — see <a class="inline-link" href="#patterns">§5</a>.</div>
+    </div>
+    <table>
+      <tr><th>Topic</th><th>Producer</th><th>Consumer(s)</th><th>DLQ topic</th></tr>
+      <tr><td><code>user-created</code></td><td>Auth</td><td>Notification</td><td><code>dlq.notifications</code></td></tr>
+      <tr><td><code>product-created</code></td><td>Product</td><td>Inventory</td><td><code>dlq.product-created</code></td></tr>
+      <tr><td><code>product-updated</code></td><td>Product</td><td>— none today</td><td>—</td></tr>
+      <tr><td><code>cart-checkedout</code></td><td>Cart (via outbox)</td><td>Inventory, Product, Notification</td><td><code>dlq.cart-checkedout</code> / <code>dlq.notifications</code></td></tr>
+      <tr><td><code>cart-cancelled</code></td><td>Cart (via outbox)</td><td>Auth, Product, Inventory, Notification</td><td><code>dlq.cart-cancelled</code> / <code>dlq.notifications</code></td></tr>
+      <tr><td><code>cart-rolledback</code></td><td>Cart (direct — <b>not</b> outbox)</td><td>— none today</td><td>—</td></tr>
+      <tr><td><code>inventory-reserved</code></td><td>Inventory</td><td>Cart</td><td><code>dlq.cart-checkedout</code></td></tr>
+      <tr><td><code>inventory-reservation-failed</code></td><td>Inventory</td><td>Cart</td><td><code>dlq.cart-checkedout</code></td></tr>
+      <tr><td><code>inventory-released</code></td><td>Inventory</td><td>— none today</td><td>—</td></tr>
+    </table>
+    <div class="callout gap"><div class="callout-title">🕳️ Three topics with no consumer</div><code>product-updated</code>, <code>cart-rolledback</code>, and <code>inventory-released</code> are all produced but nothing subscribes to any of them today. Not a bug — they're forward-looking seams (e.g. a future search-index sync on <code>product-updated</code>, a future customer-notification on <code>cart-rolledback</code>) — but worth knowing they're inert if you're tracing "who reacts to X" and coming up empty.</div>
+  </section>
+
+  <section class="block" id="rationale">
+    <h2><span class="num">3</span> Design rationale — the reasoning, not just the shape</h2>
+
+    <p class="section-intro"><b>Why these six services, and not some other split?</b> Each boundary lines up with a distinct data lifecycle and load profile, not just a noun in the domain: identity (Auth) changes rarely per user and must be fast on every single request (JWT validation); the catalog (Product) is read-heavy and cacheable; stock (Inventory) is the one place correctness under concurrency matters most (see <a class="inline-link" href="shared.html#lock">§4</a> below); the order lifecycle (Cart) is bursty and is the one flow that must never silently lose a state transition; notifications and chat are both fundamentally fan-out/push problems, but on completely different triggers (Kafka events vs. live REST actions) — which is exactly why they ended up as two services instead of one "communications" service.</p>
+
+    <p class="section-intro"><b>Why database-per-service, when a shared database would mean fewer moving parts?</b> A shared database is a shared schema — any service can start joining across another service's tables, and the moment that happens the "service boundary" is fiction; the two services are one system that happens to run in two processes. Six separate Postgres instances make that physically impossible: the only contract between services is <code>Shared.Contracts</code> (the Kafka event schemas) and whatever a REST API explicitly exposes. The cost is real — no cross-service joins, no cross-service transactions — but that cost is what forces every cross-service dependency to be an explicit, versioned contract instead of an implicit one.</p>
+
+    <p class="section-intro"><b>Why is <code>POST /inventory/reserve</code> synchronous REST when almost everything else is async Kafka?</b> Because checkout needs a yes/no answer <i>before</i> it writes anything durable — "can this cart even be reserved" gates whether <code>cart.Checkout()</code> happens at all. An event-based "please reserve this" with an eventual "reserved"/"failed" event back would mean either blocking the checkout call on a Kafka round-trip (defeating the point of using Kafka) or optimistically checking out first and unwinding later — which is a strictly worse user experience for the one interaction in the whole platform where the user is actively waiting on the answer.</p>
+
+    <p class="section-intro"><b>Why does only Cart have a transactional outbox, when every other service just commits then produces?</b> Blast radius. Losing a <code>product-updated</code> event means a cache or read-model is briefly stale — annoying, self-healing on the next write. Losing a <code>cart-checkedout</code> event means a customer paid and nobody ships the order — a real business incident with no automatic recovery. The outbox pattern (see <a class="inline-link" href="cart.html#outbox">Cart §3</a>) costs an extra table, a polling relay, and at-least-once (not exactly-once) delivery semantics that every downstream consumer must dedupe against. That cost is worth paying exactly once, for the one event whose loss is unacceptable — not by default everywhere.</p>
+
+    <p class="section-intro"><b>Why do idempotency and distributed locking exist as two separate, general-purpose primitives instead of ad-hoc checks per manager?</b> Because both problems are structural, not incidental: Kafka's manual-commit consumers are <i>at-least-once by design</i> — redelivery isn't a bug to fix, it's a guarantee to plan for — and any two concurrent HTTP requests touching the same row will eventually race, regardless of which manager wrote the code. Rather than reinvent a dedupe check or a lock-shaped hack differently in every consumer, <code>Shared.Common</code> ships exactly one <code>IIdempotencyService</code> (atomic Redis <code>SETNX</code> claim) and one <code>IDistributedLockService</code> (Redis <code>SETNX</code> + TTL + token-checked safe release) that any manager can reach for — see <a class="inline-link" href="shared.html#idempotency">§3</a> and <a class="inline-link" href="shared.html#lock">§4</a> of the Shared Libraries page for the actual code.</p>
+  </section>
+
+  <section class="block" id="walkthrough">
+    <h2><span class="num">4</span> End-to-end walkthrough — one order, five services, two possible endings</h2>
+    <p class="section-intro">Tracing a single real customer journey end-to-end is the fastest way to see how the synchronous and asynchronous topologies actually interleave. Every hop below carries the same <code>X-Correlation-ID</code> — generated once at the gateway, echoed and logged at every service — so this entire trace is greppable across five separate log files by one value.</p>
+    <div class="diagram">
+      <pre class="mermaid">
+sequenceDiagram
+    participant U as Client
+    participant GW as Gateway
+    participant Cart as Cart
+    participant Inv as Inventory
+    participant OB as Cart's Outbox
+    participant K as Kafka
+    participant Prod as Product
+    participant Notif as Notification
+
+    U->>GW: POST /api/carts (idempotency key)
+    GW->>Cart: create cart
+    U->>GW: POST /api/carts/{id}/items
+    GW->>Cart: add item(s)
+
+    U->>GW: POST /api/inventory/reserve
+    GW->>Inv: reserve stock (SYNC)
+    Note over Inv: Redis lock on each SKU + atomic<br/>idempotency claim, THEN read-modify-write
+    Inv-->>K: inventory-reserved (or -failed)
+    K-->>Cart: saga consumer (dedup-guarded)
+
+    U->>GW: POST /api/carts/{id}/checkout
+    GW->>Cart: Checkout()
+    Cart->>Cart: Status -> CheckedOut
+    Cart->>OB: insert OutboxMessage (SAME transaction)
+    Cart-->>U: 200 OK (order placed)
+
+    loop every 2s
+        OB->>K: relay publishes cart-checkedout
+    end
+
+    K-->>Inv: cart-checkedout
+    Note over Inv: lock SKUs, Sell() (throws if oversold),<br/>confirm reservation — idempotent via Reservations.AnyAsync
+    K-->>Prod: cart-checkedout
+    Note over Prod: DecreaseStock (catalog count)
+    K-->>Notif: cart-checkedout
+    Note over Notif: inbox-guarded — admin SignalR push<br/>+ customer confirmation email
+      </pre>
+    </div>
+    <ol class="steps">
+      <li><b>Register / log in.</b> <span class="sub">Auth issues a JWT carrying role + every <code>menu:action</code> permission claim baked in — no per-request RBAC lookup anywhere downstream.</span></li>
+      <li><b>Create a cart, add items.</b> <span class="sub">Pure Cart-local writes — no other service is involved yet.</span></li>
+      <li><b>Reserve stock — the one synchronous cross-service call.</b> <span class="sub"><code>Cart → POST /inventory/reserve</code>. Inventory locks every requested SKU (sorted, deadlock-free), atomically claims the idempotency key, then reserves — all-or-nothing across the whole cart. Publishes <code>inventory-reserved</code>/<code>-failed</code> either way.</span></li>
+      <li><b>Checkout.</b> <span class="sub">Cart flips to <code>CheckedOut</code> and writes an outbox row in the exact same DB transaction — the 200 response to the client and the guarantee that Kafka will eventually see this event are now decoupled from each other.</span></li>
+      <li><b>Outbox relay publishes, asynchronously.</b> <span class="sub">Polls every 2s; if Kafka is briefly unreachable the row simply stays unprocessed and retries next poll — nothing is lost, nothing blocks the client who already got their 200.</span></li>
+      <li><b>Three services react to <code>cart-checkedout</code> independently and in parallel.</b> <span class="sub">Inventory sells the stock for real (and can now <i>reject</i> an oversell instead of silently clamping — see <a class="inline-link" href="inventory.html#lock">Inventory §7</a>); Product decrements the catalog count shown to browsers; Notification pushes an admin alert over SignalR and emails the customer.</span></li>
+      <li><b>Admin confirms, then ships.</b> <span class="sub">Two explicit, Kafka-free admin actions — <code>CheckedOut → Confirmed → Shipped</code>. Nothing here is automatic; a human decides.</span></li>
+    </ol>
+    <div class="callout warn">
+      <div class="callout-title">⚠️ The other ending — insufficient stock discovered at the CONSUMER, not the API</div>
+      Step 3's synchronous <code>/reserve</code> call can reject up front — but the real checkout path (step 6) is what actually sells stock, and <i>that</i> can also fail (e.g. a race that step 3's lock closes for the API path, but a differently-timed request could still hit at the consumer). When Inventory's <code>Sell()</code> throws, the consumer retries 3× with backoff, then routes the full event to <code>dlq.cart-checkedout</code> for manual reconciliation — stock is left untouched, not driven negative. Separately, if step 3 itself returns <code>inventory-reservation-failed</code>, Cart's saga consumer calls <code>RollbackAsync</code> (idempotency-guarded against redelivery), flips the cart to <code>RolledBack</code>, and publishes <code>cart-rolledback</code> — directly, not via the outbox, the one asymmetric gap named in <a class="inline-link" href="cart.html#compensation">Cart §5</a>.
+    </div>
+  </section>
+
+  <section class="block" id="patterns">
+    <h2><span class="num">5</span> Cross-cutting patterns catalog — what's used where, and what isn't</h2>
+    <p class="section-intro">One table, the whole platform. Reading down a row tells you where a pattern is load-bearing; reading across a service's column (mentally) tells you it's fine for a service to use only some of these — consistency for its own sake isn't the goal, matching the pattern to the actual risk is.</p>
+    <table>
+      <tr><th>Pattern</th><th>Used by</th><th>Deliberately NOT used by</th></tr>
+      <tr><td>Transactional outbox + relay</td><td>Cart only (<code>cart-checkedout</code>, <code>cart-cancelled</code>)</td><td>Auth, Product, Inventory — commit-then-produce, Polly-retried, no outbox table</td></tr>
+      <tr><td>Direct publish, no durability net</td><td>Cart's <code>cart-rolledback</code></td><td>—</td></tr>
+      <tr><td>Inbox idempotency (dedupe table, PK = business key)</td><td>Notification only</td><td>Inventory/Cart/Product use DB-state checks instead (row existence, status enums)</td></tr>
+      <tr><td>Redis idempotency key (atomic <code>SETNX</code> claim)</td><td>Inventory (<code>ReserveAsync</code>), Cart (<code>CheckoutAsync</code>, <code>InventorySagaConsumer</code>)</td><td>Auth (registered, no call site reaches it); every other Kafka consumer uses DB-state instead</td></tr>
+      <tr><td>Redis distributed lock</td><td>Inventory only — every stock mutation</td><td>Nowhere else in the platform</td></tr>
+      <tr><td>Manual-commit Kafka consumer + backoff + DLQ</td><td>Every consumer, all five event-driven services</td><td>Chat — no Kafka at all</td></tr>
+      <tr><td>Per-source DLQ topic</td><td>Auth, Product, Inventory, Cart (<code>dlq.&lt;source-topic&gt;</code>)</td><td>Notification funnels every source into one shared <code>dlq.notifications</code> + a header</td></tr>
+      <tr><td>RBAC via JWT claims (<code>[HasPermission]</code>)</td><td>Auth, Product, Inventory</td><td>Cart, Notification, Chat use coarser <code>[Authorize(Roles=...)]</code> only</td></tr>
+      <tr><td>SignalR + JWT-in-querystring for <code>/hubs</code></td><td>Notification, Chat</td><td>—</td></tr>
+      <tr><td>Read/write-through Redis cache</td><td>Product (<code>product:{id}</code>, 5min TTL, fails open to DB)</td><td>Auth, Cart don't cache domain reads this way</td></tr>
+      <tr><td>YARP active health checks (routing-aware)</td><td>Auth cluster, Product cluster only</td><td>Inventory/Cart/Notification/Chat clusters rely solely on Docker's startup <code>service_healthy</code> gate, not runtime routing decisions</td></tr>
+      <tr><td>Correlation ID propagation</td><td>Every service, via one shared <code>CorrelationIdMiddleware</code> in <code>Shared.Common</code></td><td>—</td></tr>
+    </table>
+  </section>
+
+  <section class="block" id="isolation">
+    <h2><span class="num">6</span> What's deliberately NOT shared — the isolation boundaries worth remembering</h2>
+    <div class="kv-grid">
+      <div class="kv"><div class="k">Chat ↔ Kafka</div><div class="v">Never connects. REST-persist-then-SignalR-push, fully isolated from the event-driven half of the platform.</div></div>
+      <div class="kv"><div class="k">Chat ↔ Redis</div><div class="v">Never connects either — no SignalR backplane, so real-time delivery only works correctly with exactly one Chat replica.</div></div>
+      <div class="kv"><div class="k">Notification ↔ Redis</div><div class="v">No connection — its idempotency is entirely the Postgres inbox table, not Redis, unlike every other event-driven service.</div></div>
+      <div class="kv"><div class="k">Any service ↔ another service's Postgres</div><div class="v">Never — enforced at the infrastructure level (six separate containers), not just by convention.</div></div>
+      <div class="kv"><div class="k">Cross-service DB transactions</div><div class="v">Don't exist — cannot exist, by construction. Every cross-service consistency guarantee in this platform is a saga (Cart↔Inventory) or eventual consistency (everything else), never a two-phase commit.</div></div>
+    </div>
+    <p>None of these are gaps to close — they're boundaries the design leans on. The moment Chat needed multi-replica scale-out, the fix is additive (a Redis backplane), not a redesign; the moment Notification needed Kafka-outage resilience, the inbox pattern already gives it that without Redis at all. The isolation is the point.</p>
+  </section>
+
+  <div class="page-footer-nav">
+    <a class="prev" href="shared.html"><div class="lbl">← Prev</div><div class="name">Shared Libraries</div></a>
+    <a class="next" href="docker.html"><div class="lbl">Next →</div><div class="name">Dockerizing the Stack</div></a>
+  </div>
+
+  <footer class="site-footer">CommerceSphere internal architecture guide</footer>
+</div>
+
+<script src="../assets/main.js"></script>
+</body>
+</html>

@@ -25,6 +25,7 @@
       <a href="notification.html">Notification</a>
       <a href="chat.html">Chat</a>
       <a href="shared.html">Shared Libs</a>
+      <a href="system-design.html">System Design</a>
       <a href="docker.html">Dockerize</a>
     </nav>
     <div class="spacer"></div>
@@ -236,7 +237,7 @@ await idempotencyService.MarkProcessedAsync(request.IdempotencyKey, TimeSpan.Fro
 
   <section class="block" id="lock">
     <h2><span class="num">7</span> Distributed lock — closing the concurrent-reservation race</h2>
-    <p class="section-intro">Idempotency alone doesn't stop two <i>different</i> requests from racing on the same SKU — two different carts, two different idempotency keys, both reserving the last unit of the same product. Every stock mutation in this service (<code>ReserveAsync</code>, <code>ReleaseAsync</code>, <code>AdjustStockAsync</code>, <code>ReceiveStockAsync</code>, and both Kafka consumers) now wraps its read-modify-write in a <a class="inline-link" href="shared.html#lock">Redis lock</a> keyed by <code>inventory:{'{'}productId{'}'}</code>.</p>
+    <p class="section-intro">Idempotency alone doesn't stop two <i>different</i> requests from racing on the same SKU — two different carts, two different idempotency keys, both reserving the last unit of the same product. Every stock mutation in this service (<code>ReserveAsync</code>, <code>ReleaseAsync</code>, <code>AdjustStockAsync</code>, <code>ReceiveStockAsync</code>, and both Kafka consumers) now wraps its read-modify-write in a <a class="inline-link" href="shared.html#lock">Redis lock</a> keyed by <code>inventory:{productId}</code>.</p>
     <div class="code-block">
       <div class="file">📄 Application/Managers/InventoryManager.cs</div>
       <pre><code class="language-csharp">private static string StockLockKey(Guid productId) => $"inventory:{productId}";

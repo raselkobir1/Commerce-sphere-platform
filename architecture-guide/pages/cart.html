@@ -25,6 +25,7 @@
       <a href="notification.html">Notification</a>
       <a href="chat.html">Chat</a>
       <a href="shared.html">Shared Libs</a>
+      <a href="system-design.html">System Design</a>
       <a href="docker.html">Dockerize</a>
     </nav>
     <div class="spacer"></div>
@@ -236,7 +237,7 @@ else // InventoryReservedTopic
 }</code></pre>
     </div>
     <p>On retry exhaustion the poison message is forwarded to <code>dlq.cart-checkedout</code> with <code>original-topic</code>/<code>error</code>/<code>failed-at</code> headers, and the offset is still committed so one bad message can't stall the whole partition.</p>
-    <div class="callout ok"><div class="callout-title">✅ Fixed</div>This was previously the one Kafka consumer in the whole platform with <b>zero</b> dedup guard — redelivery was only implicitly softened by domain-level null/status checks, not an explicit dedupe key. Verified live: publishing the exact same <code>InventoryReservedEvent</code> twice logs <code>"Saga step 2 complete"</code> once, then <code>"Reserved event for cart {'{'}CartId{'}'} already handled. Skipping."</code> for the redelivery.</div>
+    <div class="callout ok"><div class="callout-title">✅ Fixed</div>This was previously the one Kafka consumer in the whole platform with <b>zero</b> dedup guard — redelivery was only implicitly softened by domain-level null/status checks, not an explicit dedupe key. Verified live: publishing the exact same <code>InventoryReservedEvent</code> twice logs <code>"Saga step 2 complete"</code> once, then <code>"Reserved event for cart {CartId} already handled. Skipping."</code> for the redelivery.</div>
   </section>
 
   <section class="block" id="compensation">
@@ -285,7 +286,7 @@ if (!await idempotencyService.TryMarkProcessedAsync($"checkout:{request.CartId}"
     </div>
     <div class="callout ok">
       <div class="callout-title">✅ Fixed, verified live</div>
-      Firing two concurrent <code>POST /carts/{'{'}cartId{'}'}/checkout</code> calls for the same cart now returns one <code>200</code> and one clean <code>422 "checkout is already being processed"</code>, instead of racing. <code>InventorySagaConsumer</code> got the same treatment — see <a class="inline-link" href="#saga-consumer">§4</a> above — so both the initiation side and the compensation side of the saga now dedupe explicitly, matching Inventory's <code>ReserveAsync</code> pattern.
+      Firing two concurrent <code>POST /carts/{cartId}/checkout</code> calls for the same cart now returns one <code>200</code> and one clean <code>422 "checkout is already being processed"</code>, instead of racing. <code>InventorySagaConsumer</code> got the same treatment — see <a class="inline-link" href="#saga-consumer">§4</a> above — so both the initiation side and the compensation side of the saga now dedupe explicitly, matching Inventory's <code>ReserveAsync</code> pattern.
     </div>
   </section>
 
