@@ -2,6 +2,7 @@ using System.Text.Json;
 using CommerceSphere.InventoryService.Application.Interfaces;
 using CommerceSphere.InventoryService.Domain.Entities;
 using CommerceSphere.InventoryService.Infrastructure.Data;
+using CommerceSphere.Shared.Common.Locking;
 using CommerceSphere.Shared.Contracts.Events.Cart;
 using Confluent.Kafka;
 using Microsoft.EntityFrameworkCore;
@@ -23,6 +24,8 @@ public class CartCheckedOutConsumer(
     private const string DlqTopic = "dlq.cart-checkedout";
     private const string ConsumerGroup = "inventory-checkout-consumer";
     private const int MaxRetries = 3;
+    private static readonly TimeSpan LockExpiry = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan LockWait = TimeSpan.FromSeconds(5);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -90,12 +93,20 @@ public class CartCheckedOutConsumer(
 
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+        var lockService = scope.ServiceProvider.GetRequiredService<IDistributedLockService>();
 
         if (await db.Reservations.AnyAsync(r => r.CartId == evt.CartId, ct))
         {
             logger.LogInformation("Checkout {CartId} already applied to inventory. Skipping.", evt.CartId);
             return;
         }
+
+        // Lock every SKU being sold (sorted order, avoids deadlocking against a concurrent
+        // reservation/restock touching an overlapping set of products) so no other consumer instance
+        // can read/write the same InventoryItem rows until this checkout is fully saved.
+        var lockKeys = evt.Items.Select(i => $"inventory:{i.ProductId}");
+        await using var stockLock = await lockService.AcquireAllAsync(lockKeys, LockExpiry, LockWait, ct)
+            ?? throw new InvalidOperationException($"Could not acquire inventory lock for checkout {evt.CartId}.");
 
         foreach (var item in evt.Items)
         {

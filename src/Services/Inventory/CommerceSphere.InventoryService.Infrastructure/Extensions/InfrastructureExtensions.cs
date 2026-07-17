@@ -5,6 +5,7 @@ using CommerceSphere.InventoryService.Infrastructure.Kafka.Consumers;
 using CommerceSphere.InventoryService.Infrastructure.Kafka.Producers;
 using CommerceSphere.InventoryService.Infrastructure.Redis;
 using CommerceSphere.Shared.Common.Idempotency;
+using CommerceSphere.Shared.Common.Locking;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -32,7 +33,11 @@ public static class InfrastructureExtensions
         services.AddScoped<IInventoryCacheService, InventoryCacheService>();
 
         // Idempotency service (scoped)
-        services.AddScoped<IIdempotencyService, RedisIdempotencyService>();
+        services.AddScoped<IIdempotencyService>(sp =>
+            new RedisIdempotencyService(sp.GetRequiredService<IConnectionMultiplexer>(), "idempotency:inv:"));
+
+        // Distributed lock (singleton — thread-safe, just wraps the multiplexer)
+        services.AddSingleton<IDistributedLockService, RedisDistributedLockService>();
 
         // Event producer (singleton — Kafka producer is thread-safe)
         services.AddSingleton<IInventoryEventProducer, InventoryEventProducer>();

@@ -4,7 +4,6 @@ using CommerceSphere.AuthService.Domain.Interfaces;
 using CommerceSphere.AuthService.Infrastructure.Data;
 using CommerceSphere.AuthService.Infrastructure.Email;
 using CommerceSphere.AuthService.Infrastructure.Kafka.Producers;
-using CommerceSphere.AuthService.Infrastructure.Redis;
 using CommerceSphere.AuthService.Infrastructure.Sso;
 using CommerceSphere.AuthService.Infrastructure.Sso.Providers;
 using CommerceSphere.AuthService.Infrastructure.Services;
@@ -31,7 +30,8 @@ public static class InfrastructureExtensions
 
         services.AddScoped<IUnitOfWork, UnitOfWork.UnitOfWork>();
         services.AddScoped<IJwtService, JwtService>();
-        services.AddScoped<IIdempotencyService, RedisIdempotencyService>();
+        services.AddScoped<IIdempotencyService>(sp =>
+            new RedisIdempotencyService(sp.GetRequiredService<IConnectionMultiplexer>(), "idempotency:"));
         services.AddSingleton<IUserEventProducer, UserEventProducer>();
 
         // Emails the customer when an order is cancelled (consumes cart-cancelled).

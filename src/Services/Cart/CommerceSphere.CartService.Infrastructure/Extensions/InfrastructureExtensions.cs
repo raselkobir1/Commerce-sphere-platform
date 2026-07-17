@@ -26,7 +26,8 @@ public static class InfrastructureExtensions
 
         services.AddScoped<IUnitOfWork, UnitOfWork.UnitOfWork>();
         services.AddScoped<ICartCacheService, CartCacheService>();
-        services.AddScoped<IIdempotencyService, RedisIdempotencyService>();
+        services.AddScoped<IIdempotencyService>(sp =>
+            new RedisIdempotencyService(sp.GetRequiredService<IConnectionMultiplexer>(), "idempotency:cart:"));
 
         services.AddSingleton<ICartEventProducer, CartEventProducer>();
 

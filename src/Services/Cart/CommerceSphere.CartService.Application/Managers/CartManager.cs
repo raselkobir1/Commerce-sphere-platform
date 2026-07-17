@@ -233,6 +233,13 @@ public class CartManager(
 
     public async Task<CartResponse> CheckoutAsync(CheckoutCartRequest request, string correlationId, CancellationToken ct = default)
     {
+        // Claim this cart's checkout up front: without this, two concurrent checkout requests for
+        // the same cart could both read Status == Active before either one saves its change, and
+        // both would proceed. A short TTL is enough to cover one request's processing time; it isn't
+        // meant to survive across a genuinely separate, later checkout attempt.
+        if (!await idempotencyService.TryMarkProcessedAsync($"checkout:{request.CartId}", TimeSpan.FromMinutes(1), ct))
+            throw new BusinessException($"Cart {request.CartId} checkout is already being processed.");
+
         var cart = await uow.Carts.GetByIdAsync(request.CartId, ct)
             ?? throw new NotFoundException(nameof(Cart), request.CartId);
 

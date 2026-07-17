@@ -5,6 +5,7 @@ using CommerceSphere.InventoryService.Domain.Entities;
 using CommerceSphere.InventoryService.Domain.Interfaces;
 using CommerceSphere.Shared.Common.Exceptions;
 using CommerceSphere.Shared.Common.Idempotency;
+using CommerceSphere.Shared.Common.Locking;
 using CommerceSphere.Shared.Common.Models;
 using CommerceSphere.Shared.Contracts.Events.Inventory;
 using Microsoft.Extensions.Logging;
@@ -16,51 +17,68 @@ public class InventoryManager(
     IInventoryCacheService cacheService,
     IInventoryEventProducer eventProducer,
     IIdempotencyService idempotencyService,
+    IDistributedLockService lockService,
     ILogger<InventoryManager> logger) : IInventoryManager
 {
+    // How long a stock lock may be held before it auto-expires (covers one reservation's DB round trip).
+    private static readonly TimeSpan LockExpiry = TimeSpan.FromSeconds(10);
+    // How long to wait for a contended lock before giving up.
+    private static readonly TimeSpan LockWait = TimeSpan.FromSeconds(5);
+
+    private static string StockLockKey(Guid productId) => $"inventory:{productId}";
+
     public async Task<ReservationResponse> ReserveAsync(
         ReserveInventoryRequest request, string correlationId, CancellationToken ct = default)
     {
-        // Check idempotency
-        if (await idempotencyService.IsProcessedAsync(request.IdempotencyKey, ct))
+        // Atomically claim the idempotency key (short TTL): closes the check-then-mark race a plain
+        // IsProcessedAsync/MarkProcessedAsync pair leaves open. Re-marked with a long TTL on success
+        // below; on failure the short claim simply expires so a legitimate retry isn't blocked.
+        if (!await idempotencyService.TryMarkProcessedAsync(request.IdempotencyKey, TimeSpan.FromMinutes(1), ct))
             throw new IdempotencyException(request.IdempotencyKey);
 
-        // Wrap all stock deductions in a DB transaction: if any single SKU is out of stock,
-        // the whole reservation rolls back — partial reservations are never committed.
-        await uow.BeginTransactionAsync(ct);
+        // Lock every SKU being reserved (sorted order, so concurrent multi-item reservations can
+        // never deadlock on each other) — prevents two concurrent reservations from both reading the
+        // same stale QuantityAvailable and over-committing stock.
+        var lockKeys = request.Items.Select(i => StockLockKey(i.ProductId));
+        await using var stockLock = await lockService.AcquireAllAsync(lockKeys, LockExpiry, LockWait, ct)
+            ?? throw new BusinessException("Inventory is busy processing another update for one of these items. Please retry.");
+
         try
         {
-            var reservationItems = new List<ReservationItem>();
-            var inventoryItems = new List<InventoryItem>();
-
-            // Reserve stock for each item in the request
-            foreach (var item in request.Items)
+            // Wrap all stock deductions in a DB transaction: if any single SKU is out of stock,
+            // the whole reservation rolls back — partial reservations are never committed.
+            var reservation = await uow.ExecuteInTransactionAsync(async () =>
             {
-                var inventoryItem = await uow.Inventory.GetByProductIdAsync(item.ProductId, ct)
-                    ?? throw new NotFoundException(nameof(InventoryItem), item.ProductId);
+                var reservationItems = new List<ReservationItem>();
 
-                inventoryItem.Reserve(item.Quantity);
-                uow.Inventory.Update(inventoryItem);
-                inventoryItems.Add(inventoryItem);
-
-                reservationItems.Add(new ReservationItem
+                // Reserve stock for each item in the request
+                foreach (var item in request.Items)
                 {
-                    ProductId = item.ProductId,
-                    Sku = item.Sku,
-                    Quantity = item.Quantity,
-                    UnitPrice = item.UnitPrice
-                });
-            }
+                    var inventoryItem = await uow.Inventory.GetByProductIdAsync(item.ProductId, ct)
+                        ?? throw new NotFoundException(nameof(InventoryItem), item.ProductId);
 
-            var reservation = Reservation.Create(
-                request.CartId,
-                request.UserId,
-                request.IdempotencyKey,
-                reservationItems);
+                    inventoryItem.Reserve(item.Quantity);
+                    uow.Inventory.Update(inventoryItem);
 
-            await uow.Reservations.AddAsync(reservation, ct);
-            await uow.SaveChangesAsync(ct);
-            await uow.CommitTransactionAsync(ct);
+                    reservationItems.Add(new ReservationItem
+                    {
+                        ProductId = item.ProductId,
+                        Sku = item.Sku,
+                        Quantity = item.Quantity,
+                        UnitPrice = item.UnitPrice
+                    });
+                }
+
+                var newReservation = Reservation.Create(
+                    request.CartId,
+                    request.UserId,
+                    request.IdempotencyKey,
+                    reservationItems);
+
+                await uow.Reservations.AddAsync(newReservation, ct);
+                await uow.SaveChangesAsync(ct);
+                return newReservation;
+            }, ct);
 
             logger.LogInformation(
                 "Inventory reserved. ReservationId: {ReservationId}, CartId: {CartId}, CorrelationId: {CorrelationId}",
@@ -71,7 +89,7 @@ public class InventoryManager(
                 ReservationId: reservation.Id,
                 CartId: request.CartId,
                 UserId: request.UserId,
-                Items: reservationItems.Select(i =>
+                Items: reservation.Items.Select(i =>
                     new ReservedItem(i.ProductId, i.Sku, i.Quantity, i.UnitPrice)).ToList(),
                 CorrelationId: correlationId,
                 OccurredAt: DateTime.UtcNow);
@@ -90,9 +108,8 @@ public class InventoryManager(
         catch (Exception ex) when (ex is not IdempotencyException)
         {
             // IdempotencyException is excluded from this catch so it propagates to the caller
-            // without rolling back or publishing a failure event (the request was already handled).
-            await uow.RollbackTransactionAsync(ct);
-
+            // without publishing a failure event (the request was already handled). The transaction
+            // itself is already rolled back by ExecuteInTransactionAsync.
             logger.LogWarning(ex,
                 "Inventory reservation failed. CartId: {CartId}, CorrelationId: {CorrelationId}",
                 request.CartId, correlationId);
@@ -117,10 +134,13 @@ public class InventoryManager(
         var reservation = await uow.Reservations.GetByIdAsync(request.ReservationId, ct)
             ?? throw new NotFoundException(nameof(Reservation), request.ReservationId);
 
-        await uow.BeginTransactionAsync(ct);
-        try
+        var lockKeys = reservation.Items.Select(i => StockLockKey(i.ProductId));
+        await using var stockLock = await lockService.AcquireAllAsync(lockKeys, LockExpiry, LockWait, ct)
+            ?? throw new BusinessException("Inventory is busy processing another update for one of these items. Please retry.");
+
+        // Release stock for each item in the reservation
+        await uow.ExecuteInTransactionAsync(async () =>
         {
-            // Release stock for each item in the reservation
             foreach (var item in reservation.Items)
             {
                 var inventoryItem = await uow.Inventory.GetByProductIdAsync(item.ProductId, ct);
@@ -134,33 +154,28 @@ public class InventoryManager(
             reservation.Release();
             uow.Reservations.Update(reservation);
             await uow.SaveChangesAsync(ct);
-            await uow.CommitTransactionAsync(ct);
+            return true;
+        }, ct);
 
-            logger.LogInformation(
-                "Reservation released. ReservationId: {ReservationId}, CartId: {CartId}, CorrelationId: {CorrelationId}",
-                reservation.Id, request.CartId, correlationId);
+        logger.LogInformation(
+            "Reservation released. ReservationId: {ReservationId}, CartId: {CartId}, CorrelationId: {CorrelationId}",
+            reservation.Id, request.CartId, correlationId);
 
-            // Publish event
-            var evt = new InventoryReleasedEvent(
-                ReservationId: reservation.Id,
-                CartId: request.CartId,
-                Reason: request.Reason,
-                CorrelationId: correlationId,
-                OccurredAt: DateTime.UtcNow);
+        // Publish event
+        var evt = new InventoryReleasedEvent(
+            ReservationId: reservation.Id,
+            CartId: request.CartId,
+            Reason: request.Reason,
+            CorrelationId: correlationId,
+            OccurredAt: DateTime.UtcNow);
 
-            await eventProducer.PublishReleasedAsync(evt, ct);
+        await eventProducer.PublishReleasedAsync(evt, ct);
 
-            // Invalidate cache for affected products
-            foreach (var item in reservation.Items)
-                await cacheService.RemoveInventoryAsync(item.ProductId, ct);
+        // Invalidate cache for affected products
+        foreach (var item in reservation.Items)
+            await cacheService.RemoveInventoryAsync(item.ProductId, ct);
 
-            return MapToReservationResponse(reservation);
-        }
-        catch
-        {
-            await uow.RollbackTransactionAsync(ct);
-            throw;
-        }
+        return MapToReservationResponse(reservation);
     }
 
     public async Task<InventoryItemResponse> GetByProductIdAsync(Guid productId, CancellationToken ct = default)
@@ -197,6 +212,9 @@ public class InventoryManager(
     public async Task<InventoryItemResponse> AdjustStockAsync(
         AdjustStockRequest request, string correlationId, CancellationToken ct = default)
     {
+        await using var stockLock = await lockService.AcquireAsync(StockLockKey(request.ProductId), LockExpiry, LockWait, ct)
+            ?? throw new BusinessException("Inventory is busy processing another update for this item. Please retry.");
+
         var item = await uow.Inventory.GetByProductIdAsync(request.ProductId, ct)
             ?? throw new NotFoundException(nameof(InventoryItem), request.ProductId);
 
@@ -216,6 +234,9 @@ public class InventoryManager(
     public async Task<InventoryItemResponse> ReceiveStockAsync(
         ReceiveStockRequest request, string correlationId, CancellationToken ct = default)
     {
+        await using var stockLock = await lockService.AcquireAsync(StockLockKey(request.ProductId), LockExpiry, LockWait, ct)
+            ?? throw new BusinessException("Inventory is busy processing another update for this item. Please retry.");
+
         var item = await uow.Inventory.GetByProductIdAsync(request.ProductId, ct)
             ?? throw new NotFoundException(nameof(InventoryItem), request.ProductId);
 

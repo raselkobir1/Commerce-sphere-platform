@@ -1,5 +1,6 @@
 using System.Text.Json;
 using CommerceSphere.CartService.Application.Interfaces;
+using CommerceSphere.Shared.Common.Idempotency;
 using CommerceSphere.Shared.Contracts.Events.Inventory;
 using Confluent.Kafka;
 using Microsoft.Extensions.Configuration;
@@ -115,16 +116,26 @@ public class InventorySagaConsumer(
     {
         logger.LogDebug("Processing message from topic {Topic}: {Value}", result.Topic, result.Message.Value);
 
-        // BackgroundService is a singleton but ICartManager is scoped (requires a DbContext).
+        // BackgroundService is a singleton but ICartManager/IIdempotencyService are scoped.
         // Creating a new DI scope per message is the standard way to resolve scoped services
         // inside a singleton without causing lifetime issues.
         using var scope = scopeFactory.CreateScope();
         var cartManager = scope.ServiceProvider.GetRequiredService<ICartManager>();
+        var idempotencyService = scope.ServiceProvider.GetRequiredService<IIdempotencyService>();
 
         if (result.Topic == InventoryReservationFailedTopic)
         {
             var @event = JsonSerializer.Deserialize<InventoryReservationFailedEvent>(result.Message.Value)
                 ?? throw new InvalidOperationException("Failed to deserialize InventoryReservationFailedEvent.");
+
+            // Guard against redelivery (e.g. a crash between processing and committing the Kafka
+            // offset): without this, a duplicate failure event would call RollbackAsync again even
+            // if the cart had already moved on to a different terminal state.
+            if (!await idempotencyService.TryMarkProcessedAsync($"saga:reservation-failed:{@event.CartId}", TimeSpan.FromDays(7), ct))
+            {
+                logger.LogInformation("Reservation-failed event for cart {CartId} already handled. Skipping.", @event.CartId);
+                return;
+            }
 
             logger.LogWarning(
                 "Saga compensation triggered: inventory reservation failed for CartId={CartId}. Reason={Reason}. CorrelationId={CorrelationId}",
@@ -138,6 +149,12 @@ public class InventorySagaConsumer(
         {
             var @event = JsonSerializer.Deserialize<InventoryReservedEvent>(result.Message.Value)
                 ?? throw new InvalidOperationException("Failed to deserialize InventoryReservedEvent.");
+
+            if (!await idempotencyService.TryMarkProcessedAsync($"saga:reserved:{@event.CartId}", TimeSpan.FromDays(7), ct))
+            {
+                logger.LogInformation("Reserved event for cart {CartId} already handled. Skipping.", @event.CartId);
+                return;
+            }
 
             logger.LogInformation(
                 "Saga step 2 complete: inventory reserved for CartId={CartId}. ReservationId={ReservationId}. CorrelationId={CorrelationId}",

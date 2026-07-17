@@ -2,6 +2,7 @@ using System.Text.Json;
 using CommerceSphere.InventoryService.Application.Interfaces;
 using CommerceSphere.InventoryService.Domain.Entities;
 using CommerceSphere.InventoryService.Infrastructure.Data;
+using CommerceSphere.Shared.Common.Locking;
 using CommerceSphere.Shared.Contracts.Events.Cart;
 using Confluent.Kafka;
 using Microsoft.EntityFrameworkCore;
@@ -23,6 +24,8 @@ public class CartCancelledConsumer(
     private const string DlqTopic = "dlq.cart-cancelled";
     private const string ConsumerGroup = "inventory-cancel-consumer";
     private const int MaxRetries = 3;
+    private static readonly TimeSpan LockExpiry = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan LockWait = TimeSpan.FromSeconds(5);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -90,6 +93,7 @@ public class CartCancelledConsumer(
 
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+        var lockService = scope.ServiceProvider.GetRequiredService<IDistributedLockService>();
 
         var reservation = await db.Reservations.FirstOrDefaultAsync(r => r.CartId == evt.CartId, ct);
         if (reservation is null)
@@ -102,6 +106,10 @@ public class CartCancelledConsumer(
             logger.LogInformation("Cancel for cart {CartId} already restocked (status {Status}). Skipping.", evt.CartId, reservation.Status);
             return;
         }
+
+        var lockKeys = evt.Items.Select(i => $"inventory:{i.ProductId}");
+        await using var stockLock = await lockService.AcquireAllAsync(lockKeys, LockExpiry, LockWait, ct)
+            ?? throw new InvalidOperationException($"Could not acquire inventory lock for cancellation {evt.CartId}.");
 
         foreach (var item in evt.Items)
         {

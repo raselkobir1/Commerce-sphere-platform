@@ -62,13 +62,17 @@ public class InventoryItem : BaseEntity
     }
 
     // A completed sale: physically removes stock on hand (and frees any matching reservation).
-    // Clamped at zero so a replayed checkout event can never drive stock negative.
+    // Throws if stock isn't actually there — a silent clamp-to-zero would let a sale succeed
+    // while making overselling undetectable.
     public void Sell(int qty)
     {
         if (qty <= 0)
             throw new BusinessException("Sell quantity must be greater than zero.");
+        if (QuantityOnHand < qty)
+            throw new BusinessException(
+                $"Insufficient stock for SKU '{Sku}'. On hand: {QuantityOnHand}, Requested: {qty}.");
 
-        QuantityOnHand = Math.Max(0, QuantityOnHand - qty);
+        QuantityOnHand -= qty;
         QuantityReserved = Math.Max(0, QuantityReserved - qty);
         SetUpdated();
     }
